@@ -53,6 +53,10 @@ func (m *Manager) RegisterExistingBot(token string, bot *telebot.Bot) {
 	m.bots[token] = bot
 	// For existing bots (Factory), we might not have ID or don't track it in message logs mostly
 	m.botIDs[token] = 0
+
+	// Start the bot dispatcher in the background
+	go bot.Start()
+
 	log.Printf("Registered existing bot: %s...", token[:10])
 }
 
@@ -108,7 +112,7 @@ func (m *Manager) StartBot(token string, ownerChatID int64, botID int64) error {
 	// Create bot settings with Webhook poller
 	settings := telebot.Settings{
 		Token:  token,
-		Poller: &telebot.Webhook{}, // No Listen port here
+		Poller: &ManualPoller{}, // Use ManualPoller to avoid port binding
 	}
 
 	// Create bot instance
@@ -131,6 +135,10 @@ func (m *Manager) StartBot(token string, ownerChatID int64, botID int64) error {
 	// Store bot
 	m.bots[token] = bot
 	m.botIDs[token] = botID
+
+	// Start the bot dispatcher in the background
+	go bot.Start()
+
 	log.Printf("Started webhook for bot: %s... (ID: %d)", token[:10], botID)
 
 	return nil
@@ -655,4 +663,15 @@ func formatUserInfo(user *telebot.User) string {
 // formatInt64 converts int64 to string
 func formatInt64(n int64) string {
 	return strconv.FormatInt(n, 10)
+}
+
+// ManualPoller is a custom poller that does nothing but block.
+// It is used when we drive the bot updates manually via ProcessUpdate.
+// This allows us to call bot.Start() to run the dispatcher without
+// starting a built-in HTTP server or LongPolling loop.
+type ManualPoller struct{}
+
+func (p *ManualPoller) Poll(b *telebot.Bot, dest chan telebot.Update, stop chan struct{}) {
+	// Block until stop is closed
+	<-stop
 }

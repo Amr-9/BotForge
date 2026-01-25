@@ -55,7 +55,7 @@ func main() {
 	// Create Factory Bot with Webhook
 	factorySettings := telebot.Settings{
 		Token:  cfg.FactoryBotToken,
-		Poller: &telebot.Webhook{}, // No Listen port here
+		Poller: &bot.ManualPoller{}, // Use ManualPoller to avoid port binding
 	}
 
 	factoryBot, err := telebot.NewBot(factorySettings)
