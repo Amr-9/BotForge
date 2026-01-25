@@ -183,6 +183,12 @@ func (m *Manager) IsRunning(token string) bool {
 func (m *Manager) registerChildHandlers(bot *telebot.Bot, token string, ownerChatID int64) {
 	ownerChat := &telebot.Chat{ID: ownerChatID}
 
+	// Admin commands (Owner only)
+	bot.Handle("/start", m.handleChildStart(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "child_stats"}, m.handleChildStats(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "child_broadcast"}, m.handleChildBroadcast(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "cancel_broadcast"}, m.handleCancelBroadcast(bot, token))
+
 	bot.Handle(telebot.OnText, m.createMessageHandler(bot, token, ownerChat))
 	bot.Handle(telebot.OnPhoto, m.createMessageHandler(bot, token, ownerChat))
 	bot.Handle(telebot.OnVideo, m.createMessageHandler(bot, token, ownerChat))
@@ -194,6 +200,101 @@ func (m *Manager) registerChildHandlers(bot *telebot.Bot, token string, ownerCha
 	bot.Handle(telebot.OnVideoNote, m.createMessageHandler(bot, token, ownerChat))
 	bot.Handle(telebot.OnContact, m.createMessageHandler(bot, token, ownerChat))
 	bot.Handle(telebot.OnLocation, m.createMessageHandler(bot, token, ownerChat))
+}
+
+// handleChildStart handles the /start command for child bots
+func (m *Manager) handleChildStart(bot *telebot.Bot, token string, ownerChat *telebot.Chat) telebot.HandlerFunc {
+	return func(c telebot.Context) error {
+		sender := c.Sender()
+
+		// If owner, show admin menu
+		if sender.ID == ownerChat.ID {
+			menu := &telebot.ReplyMarkup{}
+			btnStats := menu.Data("📊 Statistics", "child_stats")
+			btnBroadcast := menu.Data("📢 Broadcast", "child_broadcast")
+			menu.Inline(
+				menu.Row(btnStats),
+				menu.Row(btnBroadcast),
+			)
+			return c.Reply("🤖 <b>Bot Admin Panel</b>\n\nSelect an option:", menu, telebot.ModeHTML)
+		}
+
+		// Check session for regular users
+		return m.handleUserMessage(context.Background(), c, bot, token, ownerChat)
+	}
+}
+
+// handleChildStats shows bot statistics to the owner
+func (m *Manager) handleChildStats(bot *telebot.Bot, token string, ownerChat *telebot.Chat) telebot.HandlerFunc {
+	return func(c telebot.Context) error {
+		if c.Sender().ID != ownerChat.ID {
+			return nil
+		}
+
+		ctx := context.Background()
+		m.mu.RLock()
+		botID := m.botIDs[token]
+		m.mu.RUnlock()
+
+		count, err := m.repo.GetUniqueUserCount(ctx, botID)
+		if err != nil {
+			return c.Edit("❌ Failed to retrieve stats.")
+		}
+
+		msg := fmt.Sprintf("📊 <b>Bot Statistics</b>\n\n👥 <b>Unique Users:</b> %d", count)
+
+		// Back button
+		menu := &telebot.ReplyMarkup{}
+		// We can recreate the main menu or offer a back button?
+		// For simplicity, let's keep the user on this message or allow them to go back if we had a distinct menu state.
+		// Re-adding the main menu buttons to allow navigation
+		btnStats := menu.Data("📊 Statistics", "child_stats")
+		btnBroadcast := menu.Data("📢 Broadcast", "child_broadcast")
+		menu.Inline(
+			menu.Row(btnStats),
+			menu.Row(btnBroadcast),
+		)
+
+		return c.Edit(msg, menu, telebot.ModeHTML)
+	}
+}
+
+// handleChildBroadcast initiates broadcast mode
+func (m *Manager) handleChildBroadcast(bot *telebot.Bot, token string, ownerChat *telebot.Chat) telebot.HandlerFunc {
+	return func(c telebot.Context) error {
+		if c.Sender().ID != ownerChat.ID {
+			return nil
+		}
+
+		ctx := context.Background()
+		if err := m.cache.SetBroadcastMode(ctx, token, c.Sender().ID); err != nil {
+			return c.Respond(&telebot.CallbackResponse{Text: "Failed to start broadcast mode", ShowAlert: true})
+		}
+
+		menu := &telebot.ReplyMarkup{}
+		btnCancel := menu.Data("❌ Cancel Broadcast", "cancel_broadcast")
+		menu.Inline(menu.Row(btnCancel))
+
+		return c.Edit("📢 <b>Broadcast Mode</b>\n\nSend the message you want to broadcast to all users.\nYou can send text, photos, videos, etc.", menu, telebot.ModeHTML)
+	}
+}
+
+// handleCancelBroadcast cancels broadcast mode
+func (m *Manager) handleCancelBroadcast(bot *telebot.Bot, token string) telebot.HandlerFunc {
+	return func(c telebot.Context) error {
+		ctx := context.Background()
+		m.cache.ClearBroadcastMode(ctx, token, c.Sender().ID)
+
+		menu := &telebot.ReplyMarkup{}
+		btnStats := menu.Data("📊 Statistics", "child_stats")
+		btnBroadcast := menu.Data("📢 Broadcast", "child_broadcast")
+		menu.Inline(
+			menu.Row(btnStats),
+			menu.Row(btnBroadcast),
+		)
+
+		return c.Edit("📢 Broadcast cancelled.", menu, telebot.ModeHTML)
+	}
 }
 
 // createMessageHandler returns a handler function for processing messages
@@ -273,6 +374,12 @@ func (m *Manager) handleUserMessage(ctx context.Context, c telebot.Context, bot 
 func (m *Manager) handleAdminReply(ctx context.Context, c telebot.Context, bot *telebot.Bot, token string) error {
 	msg := c.Message()
 
+	// Check Broadcast Mode
+	isBroadcast, err := m.cache.GetBroadcastMode(ctx, token, c.Sender().ID)
+	if err == nil && isBroadcast {
+		return m.executeBroadcast(ctx, c, bot, token)
+	}
+
 	m.mu.RLock()
 	botID := m.botIDs[token]
 	m.mu.RUnlock()
@@ -283,7 +390,6 @@ func (m *Manager) handleAdminReply(ctx context.Context, c telebot.Context, bot *
 
 	replyToID := msg.ReplyTo.ID
 	var userChatID int64
-	var err error
 
 	userChatID, err = m.cache.GetMessageLink(ctx, token, replyToID)
 	if err != nil {
@@ -308,6 +414,36 @@ func (m *Manager) handleAdminReply(ctx context.Context, c telebot.Context, bot *
 		return c.Reply("Could not find the original message sender. The message may be too old.")
 	}
 
+	// INFO Command: Check if admin sent "info" (case-insensitive)
+	if strings.ToLower(strings.TrimSpace(msg.Text)) == "info" {
+		// Get user info from Telegram (Wait, we only have ID)
+		// We can try to get Chat info if the bot has seen them recently or just use what we have.
+		// `bot.ChatByID` might work if we have the ID.
+		chat, err := bot.ChatByID(userChatID)
+		if err != nil {
+			log.Printf("Failed to get chat info: %v", err)
+			// Fallback if we can't get chat info, just show ID
+			chat = &telebot.Chat{ID: userChatID}
+		}
+
+		// Get first message date
+		firstMsgDate, err := m.repo.GetFirstMessageDate(ctx, botID, userChatID)
+		dateStr := "Unknown"
+		if err == nil && !firstMsgDate.IsZero() {
+			dateStr = firstMsgDate.Format("2006-01-02 15:04:05")
+		}
+
+		infoText := fmt.Sprintf(`👤 <b>From:</b> %s %s
+🔗 <b>Username:</b> @%s
+🆔 <b>ID:</b> <code>%d</code>
+
+📅 <b>First Message:</b> %s`,
+			chat.FirstName, chat.LastName, chat.Username, chat.ID, dateStr)
+
+		return c.Reply(infoText, telebot.ModeHTML)
+	}
+
+	// Normal Reply -> Forward to user
 	userChat := &telebot.Chat{ID: userChatID}
 	_, err = bot.Copy(userChat, msg)
 	if err != nil {
@@ -316,6 +452,68 @@ func (m *Manager) handleAdminReply(ctx context.Context, c telebot.Context, bot *
 	}
 
 	return c.Reply("✅ Message sent successfully!")
+}
+
+// executeBroadcast runs the broadcast process
+func (m *Manager) executeBroadcast(ctx context.Context, c telebot.Context, bot *telebot.Bot, token string) error {
+	m.mu.RLock()
+	botID := m.botIDs[token]
+	m.mu.RUnlock()
+
+	// Exit broadcast mode immediately to prevent accidental double sends
+	m.cache.ClearBroadcastMode(ctx, token, c.Sender().ID)
+
+	c.Reply("⏳ Starting broadcast. This may take a while...")
+
+	userIDs, err := m.repo.GetAllUserChatIDs(ctx, botID)
+	if err != nil {
+		return c.Reply("❌ Failed to retrieve user list.")
+	}
+
+	success := 0
+	blocked := 0
+	failed := 0
+
+	for _, userID := range userIDs {
+		// Skip sending to the admin themselves if they are in the list
+		if userID == c.Sender().ID {
+			continue
+		}
+
+		userChat := &telebot.Chat{ID: userID}
+		_, err := bot.Copy(userChat, c.Message())
+		if err != nil {
+			// Check for blocked user error (usually "Forbidden: bot was blocked by the user")
+			if strings.Contains(err.Error(), "blocked") || strings.Contains(err.Error(), "Forbidden") {
+				blocked++
+			} else {
+				failed++
+				log.Printf("Failed to broadcast to %d: %v", userID, err)
+			}
+		} else {
+			success++
+		}
+		// Small delay to treat API gently
+		// time.Sleep(30 * time.Millisecond)
+	}
+
+	report := fmt.Sprintf(`📢 <b>Broadcast Report</b>
+
+✅ <b>Success:</b> %d
+🚫 <b>Blocked/Forbidden:</b> %d
+❌ <b>Failed:</b> %d
+👥 <b>Total Attempted:</b> %d`,
+		success, blocked, failed, len(userIDs))
+
+	menu := &telebot.ReplyMarkup{}
+	btnStats := menu.Data("📊 Statistics", "child_stats")
+	btnBroadcast := menu.Data("📢 Broadcast", "child_broadcast")
+	menu.Inline(
+		menu.Row(btnStats),
+		menu.Row(btnBroadcast),
+	)
+
+	return c.Reply(report, menu, telebot.ModeHTML)
 }
 
 // formatUserInfo creates a formatted user info header

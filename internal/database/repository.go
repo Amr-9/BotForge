@@ -151,6 +151,22 @@ func (r *Repository) HasUserInteracted(ctx context.Context, botID int64, userCha
 	return true, nil
 }
 
+// GetFirstMessageDate retrieves the timestamp of the first message from a user
+func (r *Repository) GetFirstMessageDate(ctx context.Context, botID int64, userChatID int64) (time.Time, error) {
+	var createdAt time.Time
+	query := `SELECT created_at FROM message_logs WHERE bot_id = ? AND user_chat_id = ? ORDER BY id ASC LIMIT 1`
+
+	err := r.mysql.db.GetContext(ctx, &createdAt, query, botID, userChatID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return time.Time{}, nil // Should ideally not happen if calling logic is correct
+		}
+		return time.Time{}, fmt.Errorf("failed to get first message date: %w", err)
+	}
+
+	return createdAt, nil
+}
+
 // GetBotsByOwner retrieves all bots owned by a specific user
 func (r *Repository) GetBotsByOwner(ctx context.Context, ownerChatID int64) ([]models.Bot, error) {
 	var bots []models.Bot
@@ -162,4 +178,30 @@ func (r *Repository) GetBotsByOwner(ctx context.Context, ownerChatID int64) ([]m
 	}
 
 	return bots, nil
+}
+
+// GetUniqueUserCount returns the number of unique users tracked for a bot
+func (r *Repository) GetUniqueUserCount(ctx context.Context, botID int64) (int64, error) {
+	var count int64
+	query := `SELECT COUNT(DISTINCT user_chat_id) FROM message_logs WHERE bot_id = ?`
+
+	err := r.mysql.db.GetContext(ctx, &count, query, botID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get unique user count: %w", err)
+	}
+
+	return count, nil
+}
+
+// GetAllUserChatIDs returns all unique user chat IDs for a bot
+func (r *Repository) GetAllUserChatIDs(ctx context.Context, botID int64) ([]int64, error) {
+	var userChatIDs []int64
+	query := `SELECT DISTINCT user_chat_id FROM message_logs WHERE bot_id = ?`
+
+	err := r.mysql.db.SelectContext(ctx, &userChatIDs, query, botID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get all user chat ids: %w", err)
+	}
+
+	return userChatIDs, nil
 }

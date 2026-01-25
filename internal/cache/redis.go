@@ -125,6 +125,31 @@ func (r *Redis) Ping(ctx context.Context) error {
 	return r.client.Ping(ctx).Err()
 }
 
+// SetBroadcastMode sets the broadcast state for an admin
+func (r *Redis) SetBroadcastMode(ctx context.Context, botToken string, adminID int64) error {
+	key := fmt.Sprintf("broadcast_mode:%s:%d", botToken, adminID)
+	return r.client.Set(ctx, key, "true", 10*time.Minute).Err()
+}
+
+// GetBroadcastMode checks if admin is in broadcast mode
+func (r *Redis) GetBroadcastMode(ctx context.Context, botToken string, adminID int64) (bool, error) {
+	key := fmt.Sprintf("broadcast_mode:%s:%d", botToken, adminID)
+	_, err := r.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// ClearBroadcastMode removes the broadcast state
+func (r *Redis) ClearBroadcastMode(ctx context.Context, botToken string, adminID int64) error {
+	key := fmt.Sprintf("broadcast_mode:%s:%d", botToken, adminID)
+	return r.client.Del(ctx, key).Err()
+}
+
 // IsNil checks if error is redis.Nil (cache miss)
 func IsNil(err error) bool {
 	return err == redis.Nil
