@@ -154,3 +154,28 @@ func (r *Redis) ClearBroadcastMode(ctx context.Context, botToken string, adminID
 func IsNil(err error) bool {
 	return err == redis.Nil
 }
+
+// SetUserState sets a temporary state for a user (e.g. waiting for input)
+func (r *Redis) SetUserState(ctx context.Context, botToken string, userID int64, state string) error {
+	key := fmt.Sprintf("state:%s:%d", botToken, userID)
+	return r.client.Set(ctx, key, state, 5*time.Minute).Err()
+}
+
+// GetUserState retrieves the current state of a user
+func (r *Redis) GetUserState(ctx context.Context, botToken string, userID int64) (string, error) {
+	key := fmt.Sprintf("state:%s:%d", botToken, userID)
+	val, err := r.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return val, nil
+}
+
+// ClearUserState clears the user state
+func (r *Redis) ClearUserState(ctx context.Context, botToken string, userID int64) error {
+	key := fmt.Sprintf("state:%s:%d", botToken, userID)
+	return r.client.Del(ctx, key).Err()
+}

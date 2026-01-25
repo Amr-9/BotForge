@@ -4,11 +4,12 @@ import "time"
 
 // Bot represents a child bot registered by a user
 type Bot struct {
-	ID          int64     `db:"id"`
-	Token       string    `db:"token"`
-	OwnerChatID int64     `db:"owner_chat_id"`
-	IsActive    bool      `db:"is_active"`
-	CreatedAt   time.Time `db:"created_at"`
+	ID           int64     `db:"id"`
+	Token        string    `db:"token"`
+	OwnerChatID  int64     `db:"owner_chat_id"`
+	IsActive     bool      `db:"is_active"`
+	StartMessage string    `db:"start_message"`
+	CreatedAt    time.Time `db:"created_at"`
 }
 
 // MessageLog stores the mapping between admin message and user chat

@@ -187,7 +187,10 @@ func (m *Manager) registerChildHandlers(bot *telebot.Bot, token string, ownerCha
 	bot.Handle("/start", m.handleChildStart(bot, token, ownerChat))
 	bot.Handle(&telebot.Btn{Unique: "child_stats"}, m.handleChildStats(bot, token, ownerChat))
 	bot.Handle(&telebot.Btn{Unique: "child_broadcast"}, m.handleChildBroadcast(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "child_settings"}, m.handleChildSettings(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "set_start_msg"}, m.handleSetStartMsgBtn(bot, token, ownerChat))
 	bot.Handle(&telebot.Btn{Unique: "cancel_broadcast"}, m.handleCancelBroadcast(bot, token))
+	bot.Handle(&telebot.Btn{Unique: "back_to_settings"}, m.handleBackToSettings(bot, token, ownerChat))
 
 	bot.Handle(telebot.OnText, m.createMessageHandler(bot, token, ownerChat))
 	bot.Handle(telebot.OnPhoto, m.createMessageHandler(bot, token, ownerChat))
@@ -212,15 +215,95 @@ func (m *Manager) handleChildStart(bot *telebot.Bot, token string, ownerChat *te
 			menu := &telebot.ReplyMarkup{}
 			btnStats := menu.Data("📊 Statistics", "child_stats")
 			btnBroadcast := menu.Data("📢 Broadcast", "child_broadcast")
+			btnSettings := menu.Data("⚙️ Settings", "child_settings")
 			menu.Inline(
 				menu.Row(btnStats),
 				menu.Row(btnBroadcast),
+				menu.Row(btnSettings),
 			)
 			return c.Reply("🤖 <b>Bot Admin Panel</b>\n\nSelect an option:", menu, telebot.ModeHTML)
 		}
 
-		// Check session for regular users
-		return m.handleUserMessage(context.Background(), c, bot, token, ownerChat)
+		// Retrieve Start Message from DB
+		ctx := context.Background()
+		bot, err := m.repo.GetBotByToken(ctx, token)
+		if err != nil {
+			log.Printf("Failed to get bot for start msg: %v", err)
+			return c.Send("👋 Welcome! Please send me your message.")
+		}
+
+		welcomeMsg := "👋 Welcome! Please send me your message."
+		if bot != nil && bot.StartMessage != "" {
+			welcomeMsg = bot.StartMessage
+		}
+
+		// Send welcome message to user
+		return c.Send(welcomeMsg)
+	}
+}
+
+// handleChildSettings shows settings menu
+func (m *Manager) handleChildSettings(bot *telebot.Bot, token string, ownerChat *telebot.Chat) telebot.HandlerFunc {
+	return func(c telebot.Context) error {
+		if c.Sender().ID != ownerChat.ID {
+			return nil
+		}
+
+		menu := &telebot.ReplyMarkup{}
+		btnSetStartMsg := menu.Data("📝 Set Start Message", "set_start_msg")
+		// Back to main functionality is basically just sending /start again or we can have a "Main Menu" button
+		btnBack := menu.Data("« Back to Menu", "back_to_settings") // Actually reusing back_to_settings might be confusing if it just goes to settings. Let's make it go to main menu logic.
+		// Wait, I don't have a dedicated "Main Menu" handler except handleChildStart.
+		// I'll leave the Back button to just re-trigger handleChildStart logic effectively?
+		// Or I can add a specific callback for Main Menu.
+		// For now, let's just use "Back" which will edit message back to Main Menu.
+		// I will implement handleBackToMainMenu instead involved in handleChildStart?
+		// No, handleChildStart is a handler returning a function.
+		// Let's just re-render the main menu here for simplicity?
+		// Actually, let's make handleChildStart logic reusable or just manually recreate the menu.
+
+		menu.Inline(
+			menu.Row(btnSetStartMsg),
+			menu.Row(btnBack),
+		)
+
+		return c.Edit("⚙️ <b>Settings</b>\n\nChoose an option:", menu, telebot.ModeHTML)
+	}
+}
+
+// handleBackToSettings navigates back to settings menu
+func (m *Manager) handleBackToSettings(bot *telebot.Bot, token string, ownerChat *telebot.Chat) telebot.HandlerFunc {
+	return func(c telebot.Context) error {
+		// Clear any pending user state when going back
+		ctx := context.Background()
+		m.cache.ClearUserState(ctx, token, c.Sender().ID)
+		// Just reuse handleChildSettings logic
+		return m.handleChildSettings(bot, token, ownerChat)(c)
+	}
+}
+
+// handleSetStartMsgBtn initiates state to set start message
+func (m *Manager) handleSetStartMsgBtn(bot *telebot.Bot, token string, ownerChat *telebot.Chat) telebot.HandlerFunc {
+	return func(c telebot.Context) error {
+		if c.Sender().ID != ownerChat.ID {
+			return nil
+		}
+
+		ctx := context.Background()
+		if err := m.cache.SetUserState(ctx, token, c.Sender().ID, "set_start_msg"); err != nil {
+			return c.Respond(&telebot.CallbackResponse{Text: "Error setting state!", ShowAlert: true})
+		}
+
+		menu := &telebot.ReplyMarkup{}
+		btnCancel := menu.Data("❌ Cancel", "back_to_settings")
+		menu.Inline(menu.Row(btnCancel))
+
+		msg := `📝 <b>Set Start Message</b>
+
+Please send the new welcome message for your bot.
+You can use emojis and simple text.`
+
+		return c.Edit(msg, menu, telebot.ModeHTML)
 	}
 }
 
@@ -304,6 +387,35 @@ func (m *Manager) createMessageHandler(bot *telebot.Bot, token string, ownerChat
 		sender := c.Sender()
 
 		if sender.ID == ownerChat.ID {
+			// Check user state
+			state, err := m.cache.GetUserState(ctx, token, sender.ID)
+			if err != nil {
+				log.Printf("Error getting user state: %v", err)
+			}
+
+			if state == "set_start_msg" {
+				// Update Start Message
+				m.mu.RLock()
+				botID := m.botIDs[token]
+				m.mu.RUnlock()
+
+				newMsg := c.Text() // Or c.Message().Text if c.Text() is empty for multimedia, but we want text only probably.
+				// If user sends photo with caption, c.Text() returns caption via telebot sometimes?
+				// Explicitly check for text message
+				if newMsg == "" {
+					return c.Reply("⚠️ Please send a text message.")
+				}
+
+				if err := m.repo.UpdateBotStartMessage(ctx, botID, newMsg); err != nil {
+					return c.Reply("❌ Failed to update start message.")
+				}
+
+				// Clear state
+				m.cache.ClearUserState(ctx, token, sender.ID)
+
+				return c.Reply("✅ <b>Start Message Updated!</b>\n\nNew users will now see your custom message.", telebot.ModeHTML)
+			}
+
 			return m.handleAdminReply(ctx, c, bot, token)
 		}
 

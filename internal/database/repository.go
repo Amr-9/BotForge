@@ -21,7 +21,7 @@ func NewRepository(mysql *MySQL) *Repository {
 
 // CreateBot inserts a new bot into the database
 func (r *Repository) CreateBot(ctx context.Context, token string, ownerChatID int64) (*models.Bot, error) {
-	query := `INSERT INTO bots (token, owner_chat_id, is_active) VALUES (?, ?, TRUE)`
+	query := `INSERT INTO bots (token, owner_chat_id, is_active, start_message) VALUES (?, ?, TRUE, '')`
 
 	result, err := r.mysql.db.ExecContext(ctx, query, token, ownerChatID)
 	if err != nil {
@@ -34,18 +34,19 @@ func (r *Repository) CreateBot(ctx context.Context, token string, ownerChatID in
 	}
 
 	return &models.Bot{
-		ID:          id,
-		Token:       token,
-		OwnerChatID: ownerChatID,
-		IsActive:    true,
-		CreatedAt:   time.Now(),
+		ID:           id,
+		Token:        token,
+		OwnerChatID:  ownerChatID,
+		IsActive:     true,
+		StartMessage: "",
+		CreatedAt:    time.Now(),
 	}, nil
 }
 
 // GetBotByToken retrieves a bot by its token
 func (r *Repository) GetBotByToken(ctx context.Context, token string) (*models.Bot, error) {
 	var bot models.Bot
-	query := `SELECT id, token, owner_chat_id, is_active, created_at FROM bots WHERE token = ?`
+	query := `SELECT id, token, owner_chat_id, is_active, start_message, created_at FROM bots WHERE token = ?`
 
 	err := r.mysql.db.GetContext(ctx, &bot, query, token)
 	if err != nil {
@@ -61,7 +62,7 @@ func (r *Repository) GetBotByToken(ctx context.Context, token string) (*models.B
 // GetActiveBots retrieves all active bots
 func (r *Repository) GetActiveBots(ctx context.Context) ([]models.Bot, error) {
 	var bots []models.Bot
-	query := `SELECT id, token, owner_chat_id, is_active, created_at FROM bots WHERE is_active = TRUE`
+	query := `SELECT id, token, owner_chat_id, is_active, start_message, created_at FROM bots WHERE is_active = TRUE`
 
 	err := r.mysql.db.SelectContext(ctx, &bots, query)
 	if err != nil {
@@ -90,6 +91,18 @@ func (r *Repository) ActivateBot(ctx context.Context, token string) error {
 	_, err := r.mysql.db.ExecContext(ctx, query, token)
 	if err != nil {
 		return fmt.Errorf("failed to activate bot: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateBotStartMessage updates the welcome message for a bot
+func (r *Repository) UpdateBotStartMessage(ctx context.Context, botID int64, message string) error {
+	query := `UPDATE bots SET start_message = ? WHERE id = ?`
+
+	_, err := r.mysql.db.ExecContext(ctx, query, message, botID)
+	if err != nil {
+		return fmt.Errorf("failed to update start message: %w", err)
 	}
 
 	return nil
@@ -170,7 +183,7 @@ func (r *Repository) GetFirstMessageDate(ctx context.Context, botID int64, userC
 // GetBotsByOwner retrieves all bots owned by a specific user
 func (r *Repository) GetBotsByOwner(ctx context.Context, ownerChatID int64) ([]models.Bot, error) {
 	var bots []models.Bot
-	query := `SELECT id, token, owner_chat_id, is_active, created_at FROM bots WHERE owner_chat_id = ?`
+	query := `SELECT id, token, owner_chat_id, is_active, start_message, created_at FROM bots WHERE owner_chat_id = ?`
 
 	err := r.mysql.db.SelectContext(ctx, &bots, query, ownerChatID)
 	if err != nil {
