@@ -1,4 +1,4 @@
-package bot
+package factory
 
 import (
 	"context"
@@ -7,145 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Amr-9/botforge/internal/database"
 	"gopkg.in/telebot.v3"
 )
-
-// Button callback data constants
-const (
-	CallbackAddBot     = "add_bot"
-	CallbackMyBots     = "my_bots"
-	CallbackStats      = "stats"
-	CallbackMainMenu   = "main_menu"
-	CallbackBotPrefix  = "bot:"
-	CallbackStartBot   = "start:"
-	CallbackStopBot    = "stop:"
-	CallbackDeleteBot  = "delete:"
-	CallbackConfirmDel = "confirm_del:"
-	CallbackCancelDel  = "cancel_del"
-)
-
-// Factory represents the main factory bot
-type Factory struct {
-	bot     *telebot.Bot
-	repo    *database.Repository
-	manager *Manager
-	adminID int64
-}
-
-// NewFactory creates a new factory bot logic instance
-// IMPORTANT: It now accepts an *existing* bot instance which is already configured with Webhook/Poller
-func NewFactory(botInstance *telebot.Bot, repo *database.Repository, manager *Manager, adminID int64) (*Factory, error) {
-	factory := &Factory{
-		bot:     botInstance,
-		repo:    repo,
-		manager: manager,
-		adminID: adminID,
-	}
-
-	factory.registerHandlers()
-
-	return factory, nil
-}
-
-// GetBot returns the underlying bot instance
-func (f *Factory) GetBot() *telebot.Bot {
-	return f.bot
-}
-
-// registerHandlers sets up all handlers for factory bot
-func (f *Factory) registerHandlers() {
-	// Only /start command - everything else is buttons
-	f.bot.Handle("/start", f.handleStart)
-
-	// Button callbacks
-	f.bot.Handle(&telebot.Btn{Unique: CallbackAddBot}, f.handleAddBotBtn)
-	f.bot.Handle(&telebot.Btn{Unique: CallbackMyBots}, f.handleMyBotsBtn)
-	f.bot.Handle(&telebot.Btn{Unique: CallbackStats}, f.handleStatsBtn)
-	f.bot.Handle(&telebot.Btn{Unique: CallbackMainMenu}, f.handleMainMenuBtn)
-	f.bot.Handle(&telebot.Btn{Unique: CallbackCancelDel}, f.handleCancelDeleteBtn)
-
-	// Dynamic callbacks (with data)
-	f.bot.Handle(telebot.OnCallback, f.handleDynamicCallback)
-
-	// Handle text messages (for token submission)
-	f.bot.Handle(telebot.OnText, f.handleText)
-}
-
-// Start starts the factory bot (No-op in Webhook mode as server drives it)
-// But we keep it in case we switch back to Poller someday, or for logging
-func (f *Factory) Start() {
-	log.Println("Factory Bot Logic initialized.")
-}
-
-// Stop stops the factory bot
-func (f *Factory) Stop() {
-	// In webhook mode, we might want to remove webhook, but Manager handles StopAll
-	// So we can just log here or do specific cleanup
-	log.Println("Stopping Factory Bot logic...")
-}
-
-// getMainMenu returns the main menu inline keyboard
-func (f *Factory) getMainMenu(isAdmin bool) *telebot.ReplyMarkup {
-	menu := &telebot.ReplyMarkup{}
-
-	btnAddBot := menu.Data("➕ Add Bot", CallbackAddBot)
-	btnMyBots := menu.Data("🤖 My Bots", CallbackMyBots)
-
-	if isAdmin {
-		btnStats := menu.Data("📊 Stats", CallbackStats)
-		menu.Inline(
-			menu.Row(btnAddBot),
-			menu.Row(btnMyBots),
-			menu.Row(btnStats),
-		)
-	} else {
-		menu.Inline(
-			menu.Row(btnAddBot),
-			menu.Row(btnMyBots),
-		)
-	}
-
-	return menu
-}
-
-// getBackButton returns a back to menu button
-func (f *Factory) getBackButton() *telebot.ReplyMarkup {
-	menu := &telebot.ReplyMarkup{}
-	btnBack := menu.Data("« Back to Menu", CallbackMainMenu)
-	menu.Inline(menu.Row(btnBack))
-	return menu
-}
-
-// handleStart sends welcome message with main menu
-func (f *Factory) handleStart(c telebot.Context) error {
-	isAdmin := c.Sender().ID == f.adminID
-
-	welcome := `🤖 <b>Welcome to Bot Factory!</b>
-
-I can help you create and manage your own Telegram contact bots.
-
-<b>How it works:</b>
-1. Create a bot with @BotFather
-2. Add it here using the button below
-3. Users message your bot, you receive the messages here
-4. Reply to forward your response back to them
-
-Choose an option below:`
-
-	return c.Send(welcome, f.getMainMenu(isAdmin), telebot.ModeHTML)
-}
-
-// handleMainMenuBtn returns to main menu
-func (f *Factory) handleMainMenuBtn(c telebot.Context) error {
-	isAdmin := c.Sender().ID == f.adminID
-
-	welcome := `🤖 <b>Bot Factory - Main Menu</b>
-
-Choose an option:`
-
-	return c.Edit(welcome, f.getMainMenu(isAdmin), telebot.ModeHTML)
-}
 
 // handleAddBotBtn handles add bot button
 func (f *Factory) handleAddBotBtn(c telebot.Context) error {
@@ -543,37 +406,4 @@ Go to My Bots to try starting it manually.`, botInfo.Username), f.getBackButton(
 
 Users can now message your bot and you'll receive their messages here!`,
 		botInfo.Username, botInfo.FirstName), f.getMainMenu(isAdmin), telebot.ModeHTML)
-}
-
-// isValidTokenFormat checks if a string looks like a bot token
-func isValidTokenFormat(s string) bool {
-	parts := strings.Split(s, ":")
-	if len(parts) != 2 {
-		return false
-	}
-
-	for _, c := range parts[0] {
-		if c < '0' || c > '9' {
-			return false
-		}
-	}
-
-	if len(parts[1]) < 30 {
-		return false
-	}
-
-	return true
-}
-
-// maskToken masks a token for display
-func maskToken(token string) string {
-	parts := strings.Split(token, ":")
-	if len(parts) != 2 {
-		return "***"
-	}
-
-	if len(parts[1]) > 10 {
-		return parts[0] + ":" + parts[1][:5] + "..." + parts[1][len(parts[1])-5:]
-	}
-	return parts[0] + ":***"
 }

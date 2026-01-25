@@ -14,6 +14,7 @@ import (
 	"github.com/Amr-9/botforge/internal/cache"
 	"github.com/Amr-9/botforge/internal/config"
 	"github.com/Amr-9/botforge/internal/database"
+	"github.com/Amr-9/botforge/internal/factory"
 	"gopkg.in/telebot.v3"
 )
 
@@ -79,7 +80,7 @@ func main() {
 	// Let's rely on manager's routing for everyone including factory
 
 	// Create Factory Logic
-	factory, err := bot.NewFactory(factoryBot, repo, manager, cfg.AdminID)
+	factory, err := factory.NewFactory(factoryBot, repo, manager, cfg.AdminID)
 	if err != nil {
 		log.Fatalf("Failed to create factory logic: %v", err)
 	}
