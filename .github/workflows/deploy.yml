@@ -1,0 +1,87 @@
+name: Build and Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Checkout Code
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # 2. Setup Go
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+
+    # 3. Build for Linux (ARM64)
+    - name: Build for Linux
+      run: |
+        GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o botforge ./cmd/server
+
+    # 4. Copy Binary to Server
+    - name: Copy Binary to Server
+      uses: appleboy/scp-action@master
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        source: "botforge"
+        target: "/home/bot/app"
+
+    # 5. Setup and Restart Service
+    - name: Setup and Restart Service
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          # Make binary executable
+          chmod +x /home/bot/app/botforge
+          
+          # Service file path
+          SERVICE_FILE="/etc/systemd/system/botforge.service"
+          
+          if [ ! -f "$SERVICE_FILE" ]; then
+            echo "📦 Creating systemd service file..."
+            
+            sudo tee "$SERVICE_FILE" > /dev/null << 'EOF'
+          [Unit]
+          Description=Telegram Bot Factory SaaS
+          After=network.target
+          
+          [Service]
+          Type=simple
+          User=bot
+          WorkingDirectory=/home/bot/app
+          ExecStart=/home/bot/app/botforge
+          Restart=always
+          RestartSec=5
+          # Assuming .env file exists in /home/bot/app/
+          # You can also add Environment variables here
+          
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+            
+            sudo systemctl daemon-reload
+            sudo systemctl enable botforge
+            echo "✅ Service file created and enabled!"
+          else
+            echo "✅ Service file already exists"
+          fi
+          
+          # Restart service
+          echo "🔄 Restarting service..."
+          sudo systemctl restart botforge
+          
+          # Check status
+          echo "📊 Service status:"
+          sudo systemctl status botforge --no-pager
