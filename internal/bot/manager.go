@@ -199,6 +199,7 @@ func (m *Manager) registerChildHandlers(bot *telebot.Bot, token string, ownerCha
 	bot.Handle(&telebot.Btn{Unique: "set_start_msg"}, m.handleSetStartMsgBtn(bot, token, ownerChat))
 	bot.Handle(&telebot.Btn{Unique: "cancel_broadcast"}, m.handleCancelBroadcast(bot, token))
 	bot.Handle(&telebot.Btn{Unique: "back_to_settings"}, m.handleBackToSettings(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "child_main_menu"}, m.handleChildMainMenu(bot, token, ownerChat))
 
 	bot.Handle(telebot.OnText, m.createMessageHandler(bot, token, ownerChat))
 	bot.Handle(telebot.OnPhoto, m.createMessageHandler(bot, token, ownerChat))
@@ -246,7 +247,28 @@ func (m *Manager) handleChildStart(bot *telebot.Bot, token string, ownerChat *te
 		}
 
 		// Send welcome message to user
-		return c.Send(welcomeMsg)
+		// Use ModeMarkdown to support rich text (Markdown) in start message
+		return c.Send(welcomeMsg, telebot.ModeMarkdown)
+	}
+}
+
+// handleChildMainMenu shows the main admin menu (Edit mode for callbacks)
+func (m *Manager) handleChildMainMenu(bot *telebot.Bot, token string, ownerChat *telebot.Chat) telebot.HandlerFunc {
+	return func(c telebot.Context) error {
+		if c.Sender().ID != ownerChat.ID {
+			return nil
+		}
+
+		menu := &telebot.ReplyMarkup{}
+		btnStats := menu.Data("📊 Statistics", "child_stats")
+		btnBroadcast := menu.Data("📢 Broadcast", "child_broadcast")
+		btnSettings := menu.Data("⚙️ Settings", "child_settings")
+		menu.Inline(
+			menu.Row(btnStats),
+			menu.Row(btnBroadcast),
+			menu.Row(btnSettings),
+		)
+		return c.Edit("🤖 <b>Bot Admin Panel</b>\n\nSelect an option:", menu, telebot.ModeHTML)
 	}
 }
 
@@ -260,7 +282,7 @@ func (m *Manager) handleChildSettings(bot *telebot.Bot, token string, ownerChat 
 		menu := &telebot.ReplyMarkup{}
 		btnSetStartMsg := menu.Data("📝 Set Start Message", "set_start_msg")
 		// Back to main functionality is basically just sending /start again or we can have a "Main Menu" button
-		btnBack := menu.Data("« Back to Menu", "back_to_settings") // Actually reusing back_to_settings might be confusing if it just goes to settings. Let's make it go to main menu logic.
+		btnBack := menu.Data("« Back to Menu", "child_main_menu") // Corrected to point to Main Menu
 		// Wait, I don't have a dedicated "Main Menu" handler except handleChildStart.
 		// I'll leave the Back button to just re-trigger handleChildStart logic effectively?
 		// Or I can add a specific callback for Main Menu.
@@ -306,10 +328,29 @@ func (m *Manager) handleSetStartMsgBtn(bot *telebot.Bot, token string, ownerChat
 		btnCancel := menu.Data("❌ Cancel", "back_to_settings")
 		menu.Inline(menu.Row(btnCancel))
 
-		msg := `📝 <b>Set Start Message</b>
+		// Get current start message
+		// m.mu.RLock()
+		// botID := m.botIDs[token]
+		// m.mu.RUnlock()
+		// Actually we don't need botID here, we use token for GetBotByToken which is public info
+
+		currentBot, err := m.repo.GetBotByToken(ctx, token)
+		currentMsg := "<i>(Default)</i>"
+		if err == nil && currentBot != nil && currentBot.StartMessage != "" {
+			// Escape HTML tags for display in the "Current Message" section to avoid rendering them
+			currentMsg = strings.ReplaceAll(currentBot.StartMessage, "<", "&lt;")
+			currentMsg = strings.ReplaceAll(currentMsg, ">", "&gt;")
+		}
+
+		msg := fmt.Sprintf(`📝 <b>Set Start Message</b>
+
+<b>Current Message:</b>
+<pre>%s</pre>
 
 Please send the new welcome message for your bot.
-You can use emojis and simple text.`
+✅ <b>Supported Formats:</b> Markdown
+Example: <code>Hello *User*!</code>
+_Italic_, *Bold*, [Link](http://example.com)`, currentMsg)
 
 		return c.Edit(msg, menu, telebot.ModeHTML)
 	}
@@ -339,11 +380,9 @@ func (m *Manager) handleChildStats(bot *telebot.Bot, token string, ownerChat *te
 		// We can recreate the main menu or offer a back button?
 		// For simplicity, let's keep the user on this message or allow them to go back if we had a distinct menu state.
 		// Re-adding the main menu buttons to allow navigation
-		btnStats := menu.Data("📊 Statistics", "child_stats")
-		btnBroadcast := menu.Data("📢 Broadcast", "child_broadcast")
+		btnBack := menu.Data("« Back to Menu", "child_main_menu")
 		menu.Inline(
-			menu.Row(btnStats),
-			menu.Row(btnBroadcast),
+			menu.Row(btnBack),
 		)
 
 		return c.Edit(msg, menu, telebot.ModeHTML)
@@ -421,7 +460,8 @@ func (m *Manager) createMessageHandler(bot *telebot.Bot, token string, ownerChat
 				// Clear state
 				m.cache.ClearUserState(ctx, token, sender.ID)
 
-				return c.Reply("✅ <b>Start Message Updated!</b>\n\nNew users will now see your custom message.", telebot.ModeHTML)
+				c.Reply("✅ <b>Start Message Updated!</b>\n\nHere is how it will look:", telebot.ModeHTML)
+				return c.Send(newMsg, telebot.ModeMarkdown)
 			}
 
 			return m.handleAdminReply(ctx, c, bot, token)
