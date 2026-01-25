@@ -46,7 +46,7 @@ func (r *Repository) CreateBot(ctx context.Context, token string, ownerChatID in
 // GetBotByToken retrieves a bot by its token
 func (r *Repository) GetBotByToken(ctx context.Context, token string) (*models.Bot, error) {
 	var bot models.Bot
-	query := `SELECT id, token, owner_chat_id, is_active, start_message, created_at FROM bots WHERE token = ?`
+	query := `SELECT id, token, owner_chat_id, is_active, COALESCE(start_message, '') as start_message, created_at FROM bots WHERE token = ?`
 
 	err := r.mysql.db.GetContext(ctx, &bot, query, token)
 	if err != nil {
@@ -62,7 +62,7 @@ func (r *Repository) GetBotByToken(ctx context.Context, token string) (*models.B
 // GetActiveBots retrieves all active bots
 func (r *Repository) GetActiveBots(ctx context.Context) ([]models.Bot, error) {
 	var bots []models.Bot
-	query := `SELECT id, token, owner_chat_id, is_active, start_message, created_at FROM bots WHERE is_active = TRUE`
+	query := `SELECT id, token, owner_chat_id, is_active, COALESCE(start_message, '') as start_message, created_at FROM bots WHERE is_active = TRUE`
 
 	err := r.mysql.db.SelectContext(ctx, &bots, query)
 	if err != nil {
@@ -183,7 +183,7 @@ func (r *Repository) GetFirstMessageDate(ctx context.Context, botID int64, userC
 // GetBotsByOwner retrieves all bots owned by a specific user
 func (r *Repository) GetBotsByOwner(ctx context.Context, ownerChatID int64) ([]models.Bot, error) {
 	var bots []models.Bot
-	query := `SELECT id, token, owner_chat_id, is_active, start_message, created_at FROM bots WHERE owner_chat_id = ?`
+	query := `SELECT id, token, owner_chat_id, is_active, COALESCE(start_message, '') as start_message, created_at FROM bots WHERE owner_chat_id = ?`
 
 	err := r.mysql.db.SelectContext(ctx, &bots, query, ownerChatID)
 	if err != nil {
