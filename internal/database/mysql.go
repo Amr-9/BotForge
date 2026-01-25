@@ -59,7 +59,7 @@ func (m *MySQL) migrate() error {
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS bots (
 			id BIGINT AUTO_INCREMENT PRIMARY KEY,
-			token VARCHAR(100) NOT NULL UNIQUE,
+			token VARCHAR(255) NOT NULL UNIQUE,
 			owner_chat_id BIGINT NOT NULL,
 			is_active BOOLEAN DEFAULT TRUE,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

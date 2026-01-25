@@ -7,23 +7,33 @@ import (
 	"time"
 
 	"github.com/Amr-9/botforge/internal/models"
+	"github.com/Amr-9/botforge/internal/utils/crypto"
 )
 
 // Repository handles all database operations
 type Repository struct {
-	mysql *MySQL
+	mysql         *MySQL
+	encryptionKey string
 }
 
 // NewRepository creates a new repository instance
-func NewRepository(mysql *MySQL) *Repository {
-	return &Repository{mysql: mysql}
+func NewRepository(mysql *MySQL, encryptionKey string) *Repository {
+	return &Repository{
+		mysql:         mysql,
+		encryptionKey: encryptionKey,
+	}
 }
 
 // CreateBot inserts a new bot into the database
 func (r *Repository) CreateBot(ctx context.Context, token string, ownerChatID int64) (*models.Bot, error) {
+	encryptedToken, err := crypto.EncryptDeterministic(token, r.encryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt token: %w", err)
+	}
+
 	query := `INSERT INTO bots (token, owner_chat_id, is_active, start_message) VALUES (?, ?, TRUE, '')`
 
-	result, err := r.mysql.db.ExecContext(ctx, query, token, ownerChatID)
+	result, err := r.mysql.db.ExecContext(ctx, query, encryptedToken, ownerChatID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create bot: %w", err)
 	}
@@ -35,7 +45,7 @@ func (r *Repository) CreateBot(ctx context.Context, token string, ownerChatID in
 
 	return &models.Bot{
 		ID:           id,
-		Token:        token,
+		Token:        token, // Return original token to caller
 		OwnerChatID:  ownerChatID,
 		IsActive:     true,
 		StartMessage: "",
@@ -45,16 +55,28 @@ func (r *Repository) CreateBot(ctx context.Context, token string, ownerChatID in
 
 // GetBotByToken retrieves a bot by its token
 func (r *Repository) GetBotByToken(ctx context.Context, token string) (*models.Bot, error) {
+	encryptedToken, err := crypto.EncryptDeterministic(token, r.encryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt token for lookup: %w", err)
+	}
+
 	var bot models.Bot
 	query := `SELECT id, token, owner_chat_id, is_active, COALESCE(start_message, '') as start_message, created_at FROM bots WHERE token = ?`
 
-	err := r.mysql.db.GetContext(ctx, &bot, query, token)
+	err = r.mysql.db.GetContext(ctx, &bot, query, encryptedToken)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to get bot: %w", err)
 	}
+
+	// Decrypt token before returning (though we already know it matches input)
+	decryptedToken, err := crypto.DecryptDeterministic(bot.Token, r.encryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("database data corruption: failed to decrypt token: %w", err)
+	}
+	bot.Token = decryptedToken
 
 	return &bot, nil
 }
@@ -69,14 +91,30 @@ func (r *Repository) GetActiveBots(ctx context.Context) ([]models.Bot, error) {
 		return nil, fmt.Errorf("failed to get active bots: %w", err)
 	}
 
+	// Decrypt all tokens
+	for i := range bots {
+		decrypted, err := crypto.DecryptDeterministic(bots[i].Token, r.encryptionKey)
+		if err != nil {
+			// creating a placeholder or skipping? failing here is critical.
+			// Let's log error but maybe valid for now? No, better error out.
+			return nil, fmt.Errorf("failed to decrypt bot token (ID: %d): %w", bots[i].ID, err)
+		}
+		bots[i].Token = decrypted
+	}
+
 	return bots, nil
 }
 
 // DeactivateBot sets is_active to false for a bot
 func (r *Repository) DeactivateBot(ctx context.Context, token string) error {
+	encryptedToken, err := crypto.EncryptDeterministic(token, r.encryptionKey)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt token: %w", err)
+	}
+
 	query := `UPDATE bots SET is_active = FALSE WHERE token = ?`
 
-	_, err := r.mysql.db.ExecContext(ctx, query, token)
+	_, err = r.mysql.db.ExecContext(ctx, query, encryptedToken)
 	if err != nil {
 		return fmt.Errorf("failed to deactivate bot: %w", err)
 	}
@@ -86,9 +124,14 @@ func (r *Repository) DeactivateBot(ctx context.Context, token string) error {
 
 // ActivateBot sets is_active to true for a bot
 func (r *Repository) ActivateBot(ctx context.Context, token string) error {
+	encryptedToken, err := crypto.EncryptDeterministic(token, r.encryptionKey)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt token: %w", err)
+	}
+
 	query := `UPDATE bots SET is_active = TRUE WHERE token = ?`
 
-	_, err := r.mysql.db.ExecContext(ctx, query, token)
+	_, err = r.mysql.db.ExecContext(ctx, query, encryptedToken)
 	if err != nil {
 		return fmt.Errorf("failed to activate bot: %w", err)
 	}
@@ -110,9 +153,14 @@ func (r *Repository) UpdateBotStartMessage(ctx context.Context, botID int64, mes
 
 // DeleteBot removes a bot from the database
 func (r *Repository) DeleteBot(ctx context.Context, token string) error {
+	encryptedToken, err := crypto.EncryptDeterministic(token, r.encryptionKey)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt token: %w", err)
+	}
+
 	query := `DELETE FROM bots WHERE token = ?`
 
-	_, err := r.mysql.db.ExecContext(ctx, query, token)
+	_, err = r.mysql.db.ExecContext(ctx, query, encryptedToken)
 	if err != nil {
 		return fmt.Errorf("failed to delete bot: %w", err)
 	}
@@ -188,6 +236,15 @@ func (r *Repository) GetBotsByOwner(ctx context.Context, ownerChatID int64) ([]m
 	err := r.mysql.db.SelectContext(ctx, &bots, query, ownerChatID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get bots by owner: %w", err)
+	}
+
+	// Decrypt all tokens
+	for i := range bots {
+		decrypted, err := crypto.DecryptDeterministic(bots[i].Token, r.encryptionKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt bot token: %w", err)
+		}
+		bots[i].Token = decrypted
 	}
 
 	return bots, nil

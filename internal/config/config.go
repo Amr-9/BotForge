@@ -32,6 +32,9 @@ type Config struct {
 
 	// Cache TTL for message links
 	MessageTTL time.Duration
+
+	// Security
+	EncryptionKey string
 }
 
 // Load reads configuration from environment variables
@@ -83,6 +86,12 @@ func Load() (*Config, error) {
 	}
 	if cfg.WebhookURL == "" {
 		return nil, fmt.Errorf("WEBHOOK_URL is required for webhook mode")
+	}
+
+	// Encryption Key (Must be 32 chars)
+	cfg.EncryptionKey = getEnvOrDefault("BOT_ENCRYPTION_KEY", "12345678901234567890123456789012") // Default for dev only
+	if len(cfg.EncryptionKey) != 32 {
+		return nil, fmt.Errorf("BOT_ENCRYPTION_KEY must be exactly 32 bytes")
 	}
 
 	return cfg, nil

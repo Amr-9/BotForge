@@ -36,7 +36,7 @@ func main() {
 	defer mysql.Close()
 
 	// Create repository
-	repo := database.NewRepository(mysql)
+	repo := database.NewRepository(mysql, cfg.EncryptionKey)
 
 	// Connect to Redis
 	redisCache, err := cache.NewRedis(
