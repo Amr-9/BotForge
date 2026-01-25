@@ -56,29 +56,33 @@ func NewMySQL(dsn string) (*MySQL, error) {
 
 // migrate creates the required tables
 func (m *MySQL) migrate() error {
-	schema := `
-	CREATE TABLE IF NOT EXISTS bots (
-		id BIGINT AUTO_INCREMENT PRIMARY KEY,
-		token VARCHAR(100) NOT NULL UNIQUE,
-		owner_chat_id BIGINT NOT NULL,
-		is_active BOOLEAN DEFAULT TRUE,
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		INDEX idx_owner (owner_chat_id),
-		INDEX idx_active (is_active)
-	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+	queries := []string{
+		`CREATE TABLE IF NOT EXISTS bots (
+			id BIGINT AUTO_INCREMENT PRIMARY KEY,
+			token VARCHAR(100) NOT NULL UNIQUE,
+			owner_chat_id BIGINT NOT NULL,
+			is_active BOOLEAN DEFAULT TRUE,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			INDEX idx_owner (owner_chat_id),
+			INDEX idx_active (is_active)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 
-	CREATE TABLE IF NOT EXISTS message_logs (
-		id BIGINT AUTO_INCREMENT PRIMARY KEY,
-		admin_msg_id INT NOT NULL,
-		user_chat_id BIGINT NOT NULL,
-		bot_token VARCHAR(100) NOT NULL,
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		INDEX idx_lookup (admin_msg_id, bot_token)
-	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-	`
+		`CREATE TABLE IF NOT EXISTS message_logs (
+			id BIGINT AUTO_INCREMENT PRIMARY KEY,
+			admin_msg_id INT NOT NULL,
+			user_chat_id BIGINT NOT NULL,
+			bot_token VARCHAR(100) NOT NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			INDEX idx_lookup (admin_msg_id, bot_token)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+	}
 
-	_, err := m.db.Exec(schema)
-	return err
+	for _, query := range queries {
+		if _, err := m.db.Exec(query); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DB returns the underlying sqlx.DB for advanced operations

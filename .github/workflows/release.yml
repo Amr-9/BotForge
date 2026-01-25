@@ -36,7 +36,7 @@ jobs:
             asset_name: botforge-macos-arm64
             goos: darwin
             goarch: arm64
-          - os: macos-13
+          - os: macos-15-intel
             asset_name: botforge-macos-amd64
             goos: darwin
             goarch: amd64
@@ -48,7 +48,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25'
 
       - name: Download dependencies
         run: go mod download
