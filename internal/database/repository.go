@@ -108,10 +108,10 @@ func (r *Repository) DeleteBot(ctx context.Context, token string) error {
 }
 
 // SaveMessageLog stores the message link in database
-func (r *Repository) SaveMessageLog(ctx context.Context, adminMsgID int, userChatID int64, botToken string) error {
-	query := `INSERT INTO message_logs (admin_msg_id, user_chat_id, bot_token) VALUES (?, ?, ?)`
+func (r *Repository) SaveMessageLog(ctx context.Context, adminMsgID int, userChatID int64, botID int64) error {
+	query := `INSERT INTO message_logs (admin_msg_id, user_chat_id, bot_id) VALUES (?, ?, ?)`
 
-	_, err := r.mysql.db.ExecContext(ctx, query, adminMsgID, userChatID, botToken)
+	_, err := r.mysql.db.ExecContext(ctx, query, adminMsgID, userChatID, botID)
 	if err != nil {
 		return fmt.Errorf("failed to save message log: %w", err)
 	}
@@ -120,11 +120,11 @@ func (r *Repository) SaveMessageLog(ctx context.Context, adminMsgID int, userCha
 }
 
 // GetUserChatID retrieves the user chat ID for a given admin message
-func (r *Repository) GetUserChatID(ctx context.Context, adminMsgID int, botToken string) (int64, error) {
+func (r *Repository) GetUserChatID(ctx context.Context, adminMsgID int, botID int64) (int64, error) {
 	var userChatID int64
-	query := `SELECT user_chat_id FROM message_logs WHERE admin_msg_id = ? AND bot_token = ? LIMIT 1`
+	query := `SELECT user_chat_id FROM message_logs WHERE admin_msg_id = ? AND bot_id = ? LIMIT 1`
 
-	err := r.mysql.db.GetContext(ctx, &userChatID, query, adminMsgID, botToken)
+	err := r.mysql.db.GetContext(ctx, &userChatID, query, adminMsgID, botID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return 0, nil
@@ -133,6 +133,22 @@ func (r *Repository) GetUserChatID(ctx context.Context, adminMsgID int, botToken
 	}
 
 	return userChatID, nil
+}
+
+// HasUserInteracted checks if a user has ever messaged a bot
+func (r *Repository) HasUserInteracted(ctx context.Context, botID int64, userChatID int64) (bool, error) {
+	var exists int
+	query := `SELECT 1 FROM message_logs WHERE bot_id = ? AND user_chat_id = ? LIMIT 1`
+
+	err := r.mysql.db.GetContext(ctx, &exists, query, botID, userChatID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check interaction: %w", err)
+	}
+
+	return true, nil
 }
 
 // GetBotsByOwner retrieves all bots owned by a specific user

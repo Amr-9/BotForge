@@ -20,6 +20,7 @@ type Manager struct {
 	repo       *database.Repository
 	cache      *cache.Redis
 	bots       map[string]*telebot.Bot // token -> bot instance
+	botIDs     map[string]int64        // token -> bot ID
 	webhookURL string
 	mu         sync.RWMutex
 }
@@ -30,11 +31,12 @@ func NewManager(repo *database.Repository, cache *cache.Redis, webhookURL string
 		repo:       repo,
 		cache:      cache,
 		bots:       make(map[string]*telebot.Bot),
+		botIDs:     make(map[string]int64),
 		webhookURL: webhookURL,
 	}
 }
 
-// RegisterExistingBot manually adds a bot to the manager (e.g. Factory Bot)
+// RegisterExistingBot manually adds a bot to the manager
 func (m *Manager) RegisterExistingBot(token string, bot *telebot.Bot) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -44,12 +46,13 @@ func (m *Manager) RegisterExistingBot(token string, bot *telebot.Bot) {
 	webhook := &telebot.Webhook{
 		Endpoint: &telebot.WebhookEndpoint{PublicURL: publicURL},
 	}
-	// We assume caller sets the webhook or we set it here
 	if err := bot.SetWebhook(webhook); err != nil {
 		log.Printf("Failed to set webhook for existing bot: %v", err)
 	}
 
 	m.bots[token] = bot
+	// For existing bots (Factory), we might not have ID or don't track it in message logs mostly
+	m.botIDs[token] = 0
 	log.Printf("Registered existing bot: %s...", token[:10])
 }
 
@@ -89,7 +92,7 @@ func (m *Manager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // StartBot registers the bot with Telegram Webhook and adds it to the manager
-func (m *Manager) StartBot(token string, ownerChatID int64) error {
+func (m *Manager) StartBot(token string, ownerChatID int64, botID int64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -118,7 +121,6 @@ func (m *Manager) StartBot(token string, ownerChatID int64) error {
 	webhook := &telebot.Webhook{
 		Endpoint: &telebot.WebhookEndpoint{PublicURL: publicURL},
 	}
-	// We handle errors gently here to avoid crashing entire loop on startup
 	if err := bot.SetWebhook(webhook); err != nil {
 		return fmt.Errorf("failed to set webhook: %w", err)
 	}
@@ -128,7 +130,8 @@ func (m *Manager) StartBot(token string, ownerChatID int64) error {
 
 	// Store bot
 	m.bots[token] = bot
-	log.Printf("Started webhook for bot: %s...", token[:10])
+	m.botIDs[token] = botID
+	log.Printf("Started webhook for bot: %s... (ID: %d)", token[:10], botID)
 
 	return nil
 }
@@ -144,6 +147,7 @@ func (m *Manager) StopBot(token string) {
 		}(bot)
 
 		delete(m.bots, token)
+		delete(m.botIDs, token)
 		log.Printf("Stopped bot: %s...", token[:10])
 	}
 }
@@ -156,6 +160,7 @@ func (m *Manager) StopAll() {
 	for token, bot := range m.bots {
 		go bot.RemoveWebhook()
 		delete(m.bots, token)
+		delete(m.botIDs, token)
 	}
 }
 
@@ -209,20 +214,51 @@ func (m *Manager) createMessageHandler(bot *telebot.Bot, token string, ownerChat
 func (m *Manager) handleUserMessage(ctx context.Context, c telebot.Context, bot *telebot.Bot, token string, ownerChat *telebot.Chat) error {
 	sender := c.Sender()
 
-	userInfo := formatUserInfo(sender)
-	_, err := bot.Send(ownerChat, userInfo, telebot.ModeHTML)
+	m.mu.RLock()
+	botID := m.botIDs[token]
+	m.mu.RUnlock()
+
+	// Check if we should send user info (Session Logic)
+	hasSession, err := m.cache.HasSession(ctx, token, sender.ID)
 	if err != nil {
-		log.Printf("Failed to send user info: %v", err)
+		log.Printf("Error checking session: %v", err)
 	}
 
-	sent, err := bot.Copy(ownerChat, c.Message())
+	// If NOT in Redis, check DB (Persistent Check)
+	if !hasSession {
+		hasInteracted, err := m.repo.HasUserInteracted(ctx, botID, sender.ID)
+		if err != nil {
+			log.Printf("Error checking DB interaction: %v", err)
+		} else if hasInteracted {
+			hasSession = true
+			// Populate Redis so we don't check DB next time
+			m.cache.SetSession(ctx, token, sender.ID, 0)
+		}
+	}
+
+	// If still NO session (truly first time), send Header
+	if !hasSession {
+		userInfo := formatUserInfo(sender)
+		_, err := bot.Send(ownerChat, userInfo, telebot.ModeHTML)
+		if err != nil {
+			log.Printf("Failed to send user info: %v", err)
+		}
+
+		// Set infinite session in Redis
+		// 0 means no expiration
+		if err := m.cache.SetSession(ctx, token, sender.ID, 0); err != nil {
+			log.Printf("Failed to update session: %v", err)
+		}
+	}
+
+	sent, err := bot.Forward(ownerChat, c.Message())
 	if err != nil {
-		log.Printf("Failed to copy message to admin: %v", err)
+		log.Printf("Failed to forward message to admin: %v", err)
 		return c.Reply("Sorry, failed to deliver your message. Please try again later.")
 	}
 
 	adminMsgID := sent.ID
-	if err := m.repo.SaveMessageLog(ctx, adminMsgID, sender.ID, token); err != nil {
+	if err := m.repo.SaveMessageLog(ctx, adminMsgID, sender.ID, botID); err != nil {
 		log.Printf("Failed to save message log to MySQL: %v", err)
 	}
 
@@ -237,6 +273,10 @@ func (m *Manager) handleUserMessage(ctx context.Context, c telebot.Context, bot 
 func (m *Manager) handleAdminReply(ctx context.Context, c telebot.Context, bot *telebot.Bot, token string) error {
 	msg := c.Message()
 
+	m.mu.RLock()
+	botID := m.botIDs[token]
+	m.mu.RUnlock()
+
 	if msg.ReplyTo == nil {
 		return c.Reply("Please reply to a user's message to send a response.")
 	}
@@ -249,14 +289,14 @@ func (m *Manager) handleAdminReply(ctx context.Context, c telebot.Context, bot *
 	if err != nil {
 		if cache.IsNil(err) {
 			log.Printf("Cache miss for msg %d, falling back to MySQL", replyToID)
-			userChatID, err = m.repo.GetUserChatID(ctx, replyToID, token)
+			userChatID, err = m.repo.GetUserChatID(ctx, replyToID, botID)
 			if err != nil {
 				log.Printf("Failed to get user chat ID from MySQL: %v", err)
 				return c.Reply("Failed to find the original message sender.")
 			}
 		} else {
 			log.Printf("Redis error: %v, falling back to MySQL", err)
-			userChatID, err = m.repo.GetUserChatID(ctx, replyToID, token)
+			userChatID, err = m.repo.GetUserChatID(ctx, replyToID, botID)
 			if err != nil {
 				log.Printf("Failed to get user chat ID from MySQL: %v", err)
 				return c.Reply("Failed to find the original message sender.")

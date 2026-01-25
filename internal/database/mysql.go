@@ -71,9 +71,10 @@ func (m *MySQL) migrate() error {
 			id BIGINT AUTO_INCREMENT PRIMARY KEY,
 			admin_msg_id INT NOT NULL,
 			user_chat_id BIGINT NOT NULL,
-			bot_token VARCHAR(100) NOT NULL,
+			bot_id BIGINT NOT NULL,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			INDEX idx_lookup (admin_msg_id, bot_token)
+			INDEX idx_lookup (admin_msg_id, bot_id),
+			FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 	}
 

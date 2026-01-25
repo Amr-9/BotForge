@@ -290,10 +290,12 @@ func (f *Factory) handleStartBotAction(c telebot.Context, tokenPrefix string) er
 
 	var fullToken string
 	var ownerID int64
+	var botID int64
 	for _, bot := range bots {
 		if strings.HasPrefix(bot.Token, tokenPrefix) {
 			fullToken = bot.Token
 			ownerID = bot.OwnerChatID
+			botID = bot.ID
 			break
 		}
 	}
@@ -308,7 +310,7 @@ func (f *Factory) handleStartBotAction(c telebot.Context, tokenPrefix string) er
 	}
 
 	// Start the bot
-	if err := f.manager.StartBot(fullToken, ownerID); err != nil {
+	if err := f.manager.StartBot(fullToken, ownerID, botID); err != nil {
 		return c.Respond(&telebot.CallbackResponse{Text: "Failed to start: " + err.Error(), ShowAlert: true})
 	}
 
@@ -514,14 +516,14 @@ func (f *Factory) processToken(c telebot.Context, token string) error {
 	botInfo := testBot.Me
 
 	// Save to database
-	_, err = f.repo.CreateBot(ctx, token, senderID)
+	savedBot, err := f.repo.CreateBot(ctx, token, senderID)
 	if err != nil {
 		log.Printf("Failed to save bot: %v", err)
 		return c.Reply("❌ Failed to save bot. Please try again.", f.getBackButton())
 	}
 
 	// Start the bot (Set Webhook)
-	if err := f.manager.StartBot(token, senderID); err != nil {
+	if err := f.manager.StartBot(token, senderID, savedBot.ID); err != nil {
 		log.Printf("Failed to start bot: %v", err)
 		return c.Reply(fmt.Sprintf(`⚠️ Bot saved but failed to set webhook.
 

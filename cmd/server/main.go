@@ -123,7 +123,7 @@ func main() {
 	} else {
 		log.Printf("Loading %d active bots...", len(activeBots))
 		for _, b := range activeBots {
-			if err := manager.StartBot(b.Token, b.OwnerChatID); err != nil {
+			if err := manager.StartBot(b.Token, b.OwnerChatID, b.ID); err != nil {
 				log.Printf("Failed to start bot %s: %v", maskToken(b.Token), err)
 			}
 		}

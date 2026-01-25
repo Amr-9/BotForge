@@ -16,6 +16,6 @@ type MessageLog struct {
 	ID         int64     `db:"id"`
 	AdminMsgID int       `db:"admin_msg_id"`
 	UserChatID int64     `db:"user_chat_id"`
-	BotToken   string    `db:"bot_token"`
+	BotID      int64     `db:"bot_id"`
 	CreatedAt  time.Time `db:"created_at"`
 }

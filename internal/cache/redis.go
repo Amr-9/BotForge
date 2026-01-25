@@ -96,6 +96,25 @@ func (r *Redis) DeleteMessageLink(ctx context.Context, botToken string, adminMsg
 	return nil
 }
 
+// HasSession checks if a user has an active session with a bot
+func (r *Redis) HasSession(ctx context.Context, botToken string, userID int64) (bool, error) {
+	key := fmt.Sprintf("session:%s:%d", botToken, userID)
+	_, err := r.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// SetSession updates the session activity for a user
+func (r *Redis) SetSession(ctx context.Context, botToken string, userID int64, ttl time.Duration) error {
+	key := fmt.Sprintf("session:%s:%d", botToken, userID)
+	return r.client.Set(ctx, key, "active", ttl).Err()
+}
+
 // Close closes the Redis connection
 func (r *Redis) Close() error {
 	return r.client.Close()
