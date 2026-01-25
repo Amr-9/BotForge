@@ -46,11 +46,11 @@ func Load() (*Config, error) {
 		FactoryBotToken: os.Getenv("FACTORY_BOT_TOKEN"),
 		WebhookURL:      os.Getenv("WEBHOOK_URL"),
 		ServerPort:      getEnvOrDefault("PORT", "4210"),
-		DBHost:          getEnvOrDefault("DB_HOST", "localhost"),
-		DBUser:          getEnvOrDefault("DB_USER", "root"),
+		DBHost:          os.Getenv("DB_HOST"),
+		DBUser:          os.Getenv("DB_USER"),
 		DBPass:          os.Getenv("DB_PASS"),
-		DBName:          getEnvOrDefault("DB_NAME", "numgate"),
-		RedisAddr:       getEnvOrDefault("REDIS_ADDR", "localhost:6379"),
+		DBName:          os.Getenv("DB_NAME"),
+		RedisAddr:       os.Getenv("REDIS_ADDR"),
 		RedisPassword:   os.Getenv("REDIS_PASSWORD"),
 	}
 
@@ -87,9 +87,18 @@ func Load() (*Config, error) {
 	if cfg.WebhookURL == "" {
 		return nil, fmt.Errorf("WEBHOOK_URL is required for webhook mode")
 	}
+	if cfg.DBHost == "" || cfg.DBUser == "" || cfg.DBName == "" {
+		return nil, fmt.Errorf("database configuration (DB_HOST, DB_USER, DB_NAME) is required")
+	}
+	if cfg.RedisAddr == "" {
+		return nil, fmt.Errorf("REDIS_ADDR is required")
+	}
 
 	// Encryption Key (Must be 32 chars)
-	cfg.EncryptionKey = getEnvOrDefault("BOT_ENCRYPTION_KEY", "12345678901234567890123456789012") // Default for dev only
+	cfg.EncryptionKey = os.Getenv("BOT_ENCRYPTION_KEY")
+	if cfg.EncryptionKey == "" {
+		return nil, fmt.Errorf("BOT_ENCRYPTION_KEY is required")
+	}
 	if len(cfg.EncryptionKey) != 32 {
 		return nil, fmt.Errorf("BOT_ENCRYPTION_KEY must be exactly 32 bytes")
 	}
