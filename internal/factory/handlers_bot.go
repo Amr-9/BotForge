@@ -318,7 +318,12 @@ func (f *Factory) handleStatsBtn(c telebot.Context) error {
 		return c.Edit("❌ Failed to get stats.", f.getBackButton())
 	}
 
-	runningCount := f.manager.GetRunningCount()
+	runningCount := 0
+	for _, bot := range bots {
+		if f.manager.IsRunning(bot.Token) {
+			runningCount++
+		}
+	}
 
 	msg := fmt.Sprintf(`📊 <b>System Statistics</b>
 
