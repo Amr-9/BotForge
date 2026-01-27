@@ -59,7 +59,7 @@ type ScheduledMessage struct {
 	Status        string     `db:"status"`
 	LastSentAt    *time.Time `db:"last_sent_at"`
 	NextRunAt     *time.Time `db:"next_run_at"`
-	FailureReason string     `db:"failure_reason"`
+	FailureReason *string    `db:"failure_reason"`
 	CreatedAt     time.Time  `db:"created_at"`
 	UpdatedAt     time.Time  `db:"updated_at"`
 }

@@ -111,12 +111,10 @@ func (m *Manager) handleScheduleTypeSelection(bot *telebot.Bot, token string, ow
 			btn3h := menu.Data("🕐 In 3 Hours", "schedule_time_3h")
 			btn6h := menu.Data("🕐 In 6 Hours", "schedule_time_6h")
 			btn12h := menu.Data("🕐 In 12 Hours", "schedule_time_12h")
-			btnCustom := menu.Data("⏰ Custom Time", "schedule_time_custom")
 			btnBack := menu.Data("« Back", "schedule_new")
 			menu.Inline(
 				menu.Row(btn1h, btn3h),
 				menu.Row(btn6h, btn12h),
-				menu.Row(btnCustom),
 				menu.Row(btnBack),
 			)
 
@@ -128,13 +126,11 @@ func (m *Manager) handleScheduleTypeSelection(bot *telebot.Bot, token string, ow
 			btn15 := menu.Data("🌆 15:00", "schedule_time_daily_15:00")
 			btn18 := menu.Data("🌙 18:00", "schedule_time_daily_18:00")
 			btn21 := menu.Data("🌃 21:00", "schedule_time_daily_21:00")
-			btnCustom := menu.Data("⏰ Custom Time", "schedule_time_custom")
 			btnBack := menu.Data("« Back", "schedule_new")
 			menu.Inline(
 				menu.Row(btn6, btn9),
 				menu.Row(btn12, btn15),
 				menu.Row(btn18, btn21),
-				menu.Row(btnCustom),
 				menu.Row(btnBack),
 			)
 
@@ -192,13 +188,11 @@ func (m *Manager) handleScheduleDaySelection(bot *telebot.Bot, token string, own
 		btn15 := menu.Data("🌆 15:00", "schedule_time_weekly_15:00")
 		btn18 := menu.Data("🌙 18:00", "schedule_time_weekly_18:00")
 		btn21 := menu.Data("🌃 21:00", "schedule_time_weekly_21:00")
-		btnCustom := menu.Data("⏰ Custom Time", "schedule_time_custom")
 		btnBack := menu.Data("« Back", "schedule_type_weekly")
 		menu.Inline(
 			menu.Row(btn6, btn9),
 			menu.Row(btn12, btn15),
 			menu.Row(btn18, btn21),
-			menu.Row(btnCustom),
 			menu.Row(btnBack),
 		)
 
