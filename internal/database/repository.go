@@ -53,7 +53,7 @@ func (r *Repository) CreateBot(ctx context.Context, token string, ownerChatID in
 	}, nil
 }
 
-// GetBotByToken retrieves a bot by its token
+// GetBotByToken retrieves a bot by its token (excludes soft-deleted bots)
 func (r *Repository) GetBotByToken(ctx context.Context, token string) (*models.Bot, error) {
 	encryptedToken, err := crypto.EncryptDeterministic(token, r.encryptionKey)
 	if err != nil {
@@ -61,7 +61,8 @@ func (r *Repository) GetBotByToken(ctx context.Context, token string) (*models.B
 	}
 
 	var bot models.Bot
-	query := `SELECT id, token, owner_chat_id, is_active, COALESCE(start_message, '') as start_message, created_at FROM bots WHERE token = ?`
+	query := `SELECT id, token, owner_chat_id, is_active, COALESCE(start_message, '') as start_message, created_at
+			  FROM bots WHERE token = ? AND deleted_at IS NULL`
 
 	err = r.mysql.db.GetContext(ctx, &bot, query, encryptedToken)
 	if err != nil {
@@ -81,10 +82,92 @@ func (r *Repository) GetBotByToken(ctx context.Context, token string) (*models.B
 	return &bot, nil
 }
 
-// GetActiveBots retrieves all active bots
+// GetDeletedBotByToken retrieves a soft-deleted bot by its token (for restore)
+func (r *Repository) GetDeletedBotByToken(ctx context.Context, token string) (*models.Bot, error) {
+	encryptedToken, err := crypto.EncryptDeterministic(token, r.encryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt token for lookup: %w", err)
+	}
+
+	var bot models.Bot
+	query := `SELECT id, token, owner_chat_id, is_active, COALESCE(start_message, '') as start_message, created_at
+			  FROM bots WHERE token = ? AND deleted_at IS NOT NULL`
+
+	err = r.mysql.db.GetContext(ctx, &bot, query, encryptedToken)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get deleted bot: %w", err)
+	}
+
+	decryptedToken, err := crypto.DecryptDeterministic(bot.Token, r.encryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("database data corruption: failed to decrypt token: %w", err)
+	}
+	bot.Token = decryptedToken
+
+	return &bot, nil
+}
+
+// RestoreBot restores a soft-deleted bot
+func (r *Repository) RestoreBot(ctx context.Context, token string, ownerChatID int64) error {
+	encryptedToken, err := crypto.EncryptDeterministic(token, r.encryptionKey)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt token: %w", err)
+	}
+
+	query := `UPDATE bots SET deleted_at = NULL, is_active = TRUE, owner_chat_id = ? WHERE token = ?`
+
+	_, err = r.mysql.db.ExecContext(ctx, query, ownerChatID, encryptedToken)
+	if err != nil {
+		return fmt.Errorf("failed to restore bot: %w", err)
+	}
+
+	return nil
+}
+
+// GetAllBots retrieves all non-deleted bots (both active and inactive)
+func (r *Repository) GetAllBots(ctx context.Context) ([]models.Bot, error) {
+	var bots []models.Bot
+	query := `SELECT id, token, owner_chat_id, is_active, COALESCE(start_message, '') as start_message, created_at
+			  FROM bots WHERE deleted_at IS NULL`
+
+	err := r.mysql.db.SelectContext(ctx, &bots, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get all bots: %w", err)
+	}
+
+	// Decrypt all tokens
+	for i := range bots {
+		decrypted, err := crypto.DecryptDeterministic(bots[i].Token, r.encryptionKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt bot token (ID: %d): %w", bots[i].ID, err)
+		}
+		bots[i].Token = decrypted
+	}
+
+	return bots, nil
+}
+
+// GetDeletedBotsCount returns the count of soft-deleted bots
+func (r *Repository) GetDeletedBotsCount(ctx context.Context) (int64, error) {
+	var count int64
+	query := `SELECT COUNT(*) FROM bots WHERE deleted_at IS NOT NULL`
+
+	err := r.mysql.db.GetContext(ctx, &count, query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get deleted bots count: %w", err)
+	}
+
+	return count, nil
+}
+
+// GetActiveBots retrieves all active bots (excludes soft-deleted)
 func (r *Repository) GetActiveBots(ctx context.Context) ([]models.Bot, error) {
 	var bots []models.Bot
-	query := `SELECT id, token, owner_chat_id, is_active, COALESCE(start_message, '') as start_message, created_at FROM bots WHERE is_active = TRUE`
+	query := `SELECT id, token, owner_chat_id, is_active, COALESCE(start_message, '') as start_message, created_at
+			  FROM bots WHERE is_active = TRUE AND deleted_at IS NULL`
 
 	err := r.mysql.db.SelectContext(ctx, &bots, query)
 	if err != nil {
@@ -151,18 +234,18 @@ func (r *Repository) UpdateBotStartMessage(ctx context.Context, botID int64, mes
 	return nil
 }
 
-// DeleteBot removes a bot from the database
+// DeleteBot performs a soft delete by setting deleted_at timestamp
 func (r *Repository) DeleteBot(ctx context.Context, token string) error {
 	encryptedToken, err := crypto.EncryptDeterministic(token, r.encryptionKey)
 	if err != nil {
 		return fmt.Errorf("failed to encrypt token: %w", err)
 	}
 
-	query := `DELETE FROM bots WHERE token = ?`
+	query := `UPDATE bots SET deleted_at = NOW(), is_active = FALSE WHERE token = ? AND deleted_at IS NULL`
 
 	_, err = r.mysql.db.ExecContext(ctx, query, encryptedToken)
 	if err != nil {
-		return fmt.Errorf("failed to delete bot: %w", err)
+		return fmt.Errorf("failed to soft delete bot: %w", err)
 	}
 
 	return nil
@@ -228,10 +311,11 @@ func (r *Repository) GetFirstMessageDate(ctx context.Context, botID int64, userC
 	return createdAt, nil
 }
 
-// GetBotsByOwner retrieves all bots owned by a specific user
+// GetBotsByOwner retrieves all bots owned by a specific user (excludes soft-deleted)
 func (r *Repository) GetBotsByOwner(ctx context.Context, ownerChatID int64) ([]models.Bot, error) {
 	var bots []models.Bot
-	query := `SELECT id, token, owner_chat_id, is_active, COALESCE(start_message, '') as start_message, created_at FROM bots WHERE owner_chat_id = ?`
+	query := `SELECT id, token, owner_chat_id, is_active, COALESCE(start_message, '') as start_message, created_at
+			  FROM bots WHERE owner_chat_id = ? AND deleted_at IS NULL`
 
 	err := r.mysql.db.SelectContext(ctx, &bots, query, ownerChatID)
 	if err != nil {

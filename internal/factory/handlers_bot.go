@@ -278,6 +278,7 @@ func (f *Factory) handleCancelDeleteBtn(c telebot.Context) error {
 // handleBotSelectBtn handles bot selection from list
 func (f *Factory) handleBotSelectBtn(c telebot.Context) error {
 	tokenPrefix := c.Callback().Data
+	log.Printf("[DEBUG] handleBotSelectBtn called - Unique: %s, Data: %s", c.Callback().Unique, tokenPrefix)
 	return f.handleBotDetails(c, tokenPrefix)
 }
 
@@ -313,12 +314,20 @@ func (f *Factory) handleStatsBtn(c telebot.Context) error {
 
 	ctx := context.Background()
 
-	// Get all bots
-	bots, err := f.repo.GetActiveBots(ctx)
+	// Get all non-deleted bots
+	bots, err := f.repo.GetAllBots(ctx)
 	if err != nil {
 		return c.Edit("❌ Failed to get stats.", f.getBackButton())
 	}
 
+	// Get deleted bots count
+	deletedCount, err := f.repo.GetDeletedBotsCount(ctx)
+	if err != nil {
+		log.Printf("Failed to get deleted bots count: %v", err)
+		deletedCount = 0
+	}
+
+	// Count running bots
 	runningCount := 0
 	for _, bot := range bots {
 		if f.manager.IsRunning(bot.Token) {
@@ -328,10 +337,11 @@ func (f *Factory) handleStatsBtn(c telebot.Context) error {
 
 	msg := fmt.Sprintf(`📊 <b>System Statistics</b>
 
-🤖 <b>Total Active Bots:</b> %d
+🤖 <b>Total Bots:</b> %d
 🟢 <b>Running:</b> %d
-🔴 <b>Stopped:</b> %d`,
-		len(bots), runningCount, len(bots)-runningCount)
+🔴 <b>Not Running:</b> %d
+🗑 <b>Deleted:</b> %d`,
+		len(bots), runningCount, len(bots)-runningCount, deletedCount)
 
 	return c.Edit(msg, f.getBackButton(), telebot.ModeHTML)
 }
@@ -353,7 +363,7 @@ func (f *Factory) processToken(c telebot.Context, token string) error {
 	ctx := context.Background()
 	senderID := c.Sender().ID
 
-	// Check if bot already exists
+	// Check if bot already exists (active)
 	existingBot, err := f.repo.GetBotByToken(ctx, token)
 	if err != nil {
 		log.Printf("Error checking existing bot: %v", err)
@@ -368,8 +378,6 @@ func (f *Factory) processToken(c telebot.Context, token string) error {
 	}
 
 	// Validate the token by creating a test bot logic
-	// Note: We use LongPoller temporarily just to validate against Telegram API
-	// But we don't start it.
 	testSettings := telebot.Settings{
 		Token:  token,
 		Poller: &telebot.LongPoller{Timeout: 1 * time.Second},
@@ -381,18 +389,35 @@ func (f *Factory) processToken(c telebot.Context, token string) error {
 		return c.Reply("❌ Invalid token! Please check your token and try again.", f.getBackButton())
 	}
 
-	// Get bot info (makes a request to getMe)
 	botInfo := testBot.Me
 
-	// Save to database
-	savedBot, err := f.repo.CreateBot(ctx, token, senderID)
+	// Check if bot was previously deleted (soft delete) - restore it
+	deletedBot, err := f.repo.GetDeletedBotByToken(ctx, token)
 	if err != nil {
-		log.Printf("Failed to save bot: %v", err)
-		return c.Reply("❌ Failed to save bot. Please try again.", f.getBackButton())
+		log.Printf("Error checking deleted bot: %v", err)
+	}
+
+	var botID int64
+	if deletedBot != nil {
+		// Restore the deleted bot
+		if err := f.repo.RestoreBot(ctx, token, senderID); err != nil {
+			log.Printf("Failed to restore bot: %v", err)
+			return c.Reply("❌ Failed to restore bot. Please try again.", f.getBackButton())
+		}
+		botID = deletedBot.ID
+		log.Printf("Bot restored: %s (ID: %d)", botInfo.Username, botID)
+	} else {
+		// Create new bot
+		savedBot, err := f.repo.CreateBot(ctx, token, senderID)
+		if err != nil {
+			log.Printf("Failed to save bot: %v", err)
+			return c.Reply("❌ Failed to save bot. Please try again.", f.getBackButton())
+		}
+		botID = savedBot.ID
 	}
 
 	// Start the bot (Set Webhook)
-	if err := f.manager.StartBot(token, senderID, savedBot.ID); err != nil {
+	if err := f.manager.StartBot(token, senderID, botID); err != nil {
 		log.Printf("Failed to start bot: %v", err)
 		return c.Reply(fmt.Sprintf(`⚠️ Bot saved but failed to set webhook.
 
@@ -404,12 +429,27 @@ Go to My Bots to try starting it manually.`, botInfo.Username), f.getBackButton(
 
 	isAdmin := c.Sender().ID == f.adminID
 
-	return c.Reply(fmt.Sprintf(`✅ <b>Bot Added Successfully!</b>
+	// Different message for restored vs new bot
+	var successMsg string
+	if deletedBot != nil {
+		successMsg = fmt.Sprintf(`✅ <b>Bot Restored Successfully!</b>
+
+<b>Bot:</b> @%s
+<b>Name:</b> %s
+<b>Status:</b> 🟢 Running (Webhook Set)
+
+Your bot has been restored with all its previous data (messages, banned users, etc.)!`,
+			botInfo.Username, botInfo.FirstName)
+	} else {
+		successMsg = fmt.Sprintf(`✅ <b>Bot Added Successfully!</b>
 
 <b>Bot:</b> @%s
 <b>Name:</b> %s
 <b>Status:</b> 🟢 Running (Webhook Set)
 
 Users can now message your bot and you'll receive their messages here!`,
-		botInfo.Username, botInfo.FirstName), f.getMainMenu(isAdmin), telebot.ModeHTML)
+			botInfo.Username, botInfo.FirstName)
+	}
+
+	return c.Reply(successMsg, f.getMainMenu(isAdmin), telebot.ModeHTML)
 }

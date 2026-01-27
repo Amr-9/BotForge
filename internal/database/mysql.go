@@ -62,10 +62,15 @@ func (m *MySQL) migrate() error {
 			token VARCHAR(255) NOT NULL UNIQUE,
 			owner_chat_id BIGINT NOT NULL,
 			is_active BOOLEAN DEFAULT TRUE,
+			deleted_at TIMESTAMP NULL DEFAULT NULL,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			INDEX idx_owner (owner_chat_id),
-			INDEX idx_active (is_active)
+			INDEX idx_active (is_active),
+			INDEX idx_deleted (deleted_at)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+
+		// Migration: Add deleted_at column if not exists
+		`ALTER TABLE bots ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP NULL DEFAULT NULL;`,
 
 		`CREATE TABLE IF NOT EXISTS message_logs (
 			id BIGINT AUTO_INCREMENT PRIMARY KEY,
