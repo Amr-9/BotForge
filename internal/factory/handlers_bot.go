@@ -277,7 +277,7 @@ func (f *Factory) handleCancelDeleteBtn(c telebot.Context) error {
 
 // handleDynamicCallback handles callbacks with dynamic data
 func (f *Factory) handleDynamicCallback(c telebot.Context) error {
-	data := c.Callback().Data
+	data := c.Callback().Unique
 
 	switch {
 	case strings.HasPrefix(data, CallbackBotPrefix):
