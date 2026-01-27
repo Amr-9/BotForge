@@ -185,6 +185,25 @@ func (m *Manager) IsRunning(token string) bool {
 	return exists
 }
 
+// GetBotByID retrieves a bot instance by bot ID
+func (m *Manager) GetBotByID(botID int64) (*telebot.Bot, string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	// Find the token by botID
+	for token, id := range m.botIDs {
+		if id == botID {
+			bot, exists := m.bots[token]
+			if !exists {
+				return nil, "", fmt.Errorf("bot with ID %d is not running", botID)
+			}
+			return bot, token, nil
+		}
+	}
+
+	return nil, "", fmt.Errorf("bot with ID %d not found", botID)
+}
+
 // ManualPoller is a custom poller that does nothing but block.
 // It is used when we drive the bot updates manually via ProcessUpdate.
 // This allows us to call bot.Start() to run the dispatcher without

@@ -341,3 +341,109 @@ func (r *Redis) ClearTempData(ctx context.Context, botToken string, userID int64
 	redisKey := fmt.Sprintf("temp:%s:%d:%s", botToken, userID, key)
 	return r.client.Del(ctx, redisKey).Err()
 }
+
+// ==================== Scheduled Messages Cache Functions ====================
+
+// SetScheduleState sets the schedule creation state for an admin
+func (r *Redis) SetScheduleState(ctx context.Context, botToken string, adminID int64, state string) error {
+	key := fmt.Sprintf("schedule_state:%s:%d", botToken, adminID)
+	return r.client.Set(ctx, key, state, 15*time.Minute).Err()
+}
+
+// GetScheduleState gets the current schedule state for an admin
+func (r *Redis) GetScheduleState(ctx context.Context, botToken string, adminID int64) (string, error) {
+	key := fmt.Sprintf("schedule_state:%s:%d", botToken, adminID)
+	val, err := r.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return val, nil
+}
+
+// SetScheduleMessageData stores temporary message data during schedule creation
+func (r *Redis) SetScheduleMessageData(ctx context.Context, botToken string, adminID int64, msgType, text, fileID, caption string) error {
+	pipe := r.client.Pipeline()
+
+	pipe.Set(ctx, fmt.Sprintf("schedule_msg_type:%s:%d", botToken, adminID), msgType, 15*time.Minute)
+	pipe.Set(ctx, fmt.Sprintf("schedule_msg_text:%s:%d", botToken, adminID), text, 15*time.Minute)
+	pipe.Set(ctx, fmt.Sprintf("schedule_file_id:%s:%d", botToken, adminID), fileID, 15*time.Minute)
+	pipe.Set(ctx, fmt.Sprintf("schedule_caption:%s:%d", botToken, adminID), caption, 15*time.Minute)
+
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+// GetScheduleMessageData retrieves temporary message data
+func (r *Redis) GetScheduleMessageData(ctx context.Context, botToken string, adminID int64) (msgType, text, fileID, caption string, err error) {
+	pipe := r.client.Pipeline()
+
+	typeCmd := pipe.Get(ctx, fmt.Sprintf("schedule_msg_type:%s:%d", botToken, adminID))
+	textCmd := pipe.Get(ctx, fmt.Sprintf("schedule_msg_text:%s:%d", botToken, adminID))
+	fileCmd := pipe.Get(ctx, fmt.Sprintf("schedule_file_id:%s:%d", botToken, adminID))
+	captionCmd := pipe.Get(ctx, fmt.Sprintf("schedule_caption:%s:%d", botToken, adminID))
+
+	_, err = pipe.Exec(ctx)
+	if err != nil && err != redis.Nil {
+		return "", "", "", "", err
+	}
+
+	msgType, _ = typeCmd.Result()
+	text, _ = textCmd.Result()
+	fileID, _ = fileCmd.Result()
+	caption, _ = captionCmd.Result()
+
+	return msgType, text, fileID, caption, nil
+}
+
+// SetScheduleConfig stores schedule configuration (type, time, day)
+func (r *Redis) SetScheduleConfig(ctx context.Context, botToken string, adminID int64, scheduleType, scheduleTime, day string) error {
+	pipe := r.client.Pipeline()
+
+	pipe.Set(ctx, fmt.Sprintf("schedule_type:%s:%d", botToken, adminID), scheduleType, 15*time.Minute)
+	pipe.Set(ctx, fmt.Sprintf("schedule_time:%s:%d", botToken, adminID), scheduleTime, 15*time.Minute)
+	if day != "" {
+		pipe.Set(ctx, fmt.Sprintf("schedule_day:%s:%d", botToken, adminID), day, 15*time.Minute)
+	}
+
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+// GetScheduleConfig retrieves schedule configuration
+func (r *Redis) GetScheduleConfig(ctx context.Context, botToken string, adminID int64) (scheduleType, scheduleTime, day string, err error) {
+	pipe := r.client.Pipeline()
+
+	typeCmd := pipe.Get(ctx, fmt.Sprintf("schedule_type:%s:%d", botToken, adminID))
+	timeCmd := pipe.Get(ctx, fmt.Sprintf("schedule_time:%s:%d", botToken, adminID))
+	dayCmd := pipe.Get(ctx, fmt.Sprintf("schedule_day:%s:%d", botToken, adminID))
+
+	_, err = pipe.Exec(ctx)
+	if err != nil && err != redis.Nil {
+		return "", "", "", err
+	}
+
+	scheduleType, _ = typeCmd.Result()
+	scheduleTime, _ = timeCmd.Result()
+	day, _ = dayCmd.Result()
+
+	return scheduleType, scheduleTime, day, nil
+}
+
+// ClearScheduleData removes all schedule-related temporary data for an admin
+func (r *Redis) ClearScheduleData(ctx context.Context, botToken string, adminID int64) error {
+	keys := []string{
+		fmt.Sprintf("schedule_state:%s:%d", botToken, adminID),
+		fmt.Sprintf("schedule_msg_type:%s:%d", botToken, adminID),
+		fmt.Sprintf("schedule_msg_text:%s:%d", botToken, adminID),
+		fmt.Sprintf("schedule_file_id:%s:%d", botToken, adminID),
+		fmt.Sprintf("schedule_caption:%s:%d", botToken, adminID),
+		fmt.Sprintf("schedule_type:%s:%d", botToken, adminID),
+		fmt.Sprintf("schedule_time:%s:%d", botToken, adminID),
+		fmt.Sprintf("schedule_day:%s:%d", botToken, adminID),
+	}
+
+	return r.client.Del(ctx, keys...).Err()
+}

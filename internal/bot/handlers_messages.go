@@ -37,6 +37,42 @@ func (m *Manager) registerChildHandlers(bot *telebot.Bot, token string, ownerCha
 	bot.Handle(&telebot.Btn{Unique: "del_reply"}, m.handleDeleteAutoReply(bot, token, ownerChat))
 	bot.Handle(&telebot.Btn{Unique: "toggle_forward_replies"}, m.handleToggleForwardReplies(bot, token, ownerChat))
 
+	// Schedule handlers
+	bot.Handle(&telebot.Btn{Unique: "schedule_menu"}, m.handleScheduleMenu(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_new"}, m.handleScheduleNewMessage(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_list"}, m.handleListScheduledMessages(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_type_once"}, m.handleScheduleTypeSelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_type_daily"}, m.handleScheduleTypeSelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_type_weekly"}, m.handleScheduleTypeSelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_time_1h"}, m.handleScheduleTimeSelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_time_3h"}, m.handleScheduleTimeSelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_time_6h"}, m.handleScheduleTimeSelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_time_12h"}, m.handleScheduleTimeSelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_time_daily_06:00"}, m.handleScheduleTimeSelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_time_daily_09:00"}, m.handleScheduleTimeSelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_time_daily_12:00"}, m.handleScheduleTimeSelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_time_daily_15:00"}, m.handleScheduleTimeSelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_time_daily_18:00"}, m.handleScheduleTimeSelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_time_daily_21:00"}, m.handleScheduleTimeSelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_time_weekly_06:00"}, m.handleScheduleTimeSelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_time_weekly_09:00"}, m.handleScheduleTimeSelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_time_weekly_12:00"}, m.handleScheduleTimeSelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_time_weekly_15:00"}, m.handleScheduleTimeSelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_time_weekly_18:00"}, m.handleScheduleTimeSelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_time_weekly_21:00"}, m.handleScheduleTimeSelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_day_0"}, m.handleScheduleDaySelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_day_1"}, m.handleScheduleDaySelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_day_2"}, m.handleScheduleDaySelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_day_3"}, m.handleScheduleDaySelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_day_4"}, m.handleScheduleDaySelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_day_5"}, m.handleScheduleDaySelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_day_6"}, m.handleScheduleDaySelection(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_confirm"}, m.handleConfirmSchedule(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_cancel"}, m.handleCancelSchedule(bot, token))
+	bot.Handle(&telebot.Btn{Unique: "schedule_pause"}, m.handlePauseScheduledMessage(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_resume"}, m.handleResumeScheduledMessage(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "schedule_delete"}, m.handleDeleteScheduledMessage(bot, token, ownerChat))
+
 	bot.Handle(telebot.OnText, m.createMessageHandler(bot, token, ownerChat))
 	bot.Handle(telebot.OnPhoto, m.createMessageHandler(bot, token, ownerChat))
 	bot.Handle(telebot.OnVideo, m.createMessageHandler(bot, token, ownerChat))
@@ -88,6 +124,14 @@ func (m *Manager) createMessageHandler(bot *telebot.Bot, token string, ownerChat
 			// Handle auto-reply states
 			if strings.HasPrefix(state, "add_auto_reply") || strings.HasPrefix(state, "add_custom_cmd") {
 				handled, err := m.processAutoReplyState(ctx, c, token, state)
+				if handled {
+					return err
+				}
+			}
+
+			// Handle schedule states
+			if strings.HasPrefix(state, "schedule_") {
+				handled, err := m.processScheduleState(ctx, c, token, state)
 				if handled {
 					return err
 				}

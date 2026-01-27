@@ -103,6 +103,30 @@ func (m *MySQL) migrate() error {
 			INDEX idx_auto_replies_bot (bot_id, is_active),
 			FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+
+		`CREATE TABLE IF NOT EXISTS scheduled_messages (
+			id BIGINT AUTO_INCREMENT PRIMARY KEY,
+			bot_id BIGINT NOT NULL,
+			owner_chat_id BIGINT NOT NULL,
+			message_type ENUM('text', 'photo', 'video', 'document') NOT NULL DEFAULT 'text',
+			message_text TEXT,
+			file_id VARCHAR(255),
+			caption TEXT,
+			schedule_type ENUM('once', 'daily', 'weekly') NOT NULL,
+			scheduled_time DATETIME NOT NULL,
+			time_of_day TIME,
+			day_of_week TINYINT,
+			status ENUM('pending', 'sent', 'failed', 'paused', 'cancelled') NOT NULL DEFAULT 'pending',
+			last_sent_at DATETIME NULL,
+			next_run_at DATETIME NULL,
+			failure_reason TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			INDEX idx_bot_id (bot_id),
+			INDEX idx_status_next_run (status, next_run_at),
+			INDEX idx_owner (owner_chat_id),
+			FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 	}
 
 	for _, query := range queries {

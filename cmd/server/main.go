@@ -15,6 +15,7 @@ import (
 	"github.com/Amr-9/botforge/internal/config"
 	"github.com/Amr-9/botforge/internal/database"
 	"github.com/Amr-9/botforge/internal/factory"
+	"github.com/Amr-9/botforge/internal/scheduler"
 	"gopkg.in/telebot.v3"
 )
 
@@ -52,6 +53,9 @@ func main() {
 
 	// Create bot manager with Webhook support
 	manager := bot.NewManager(repo, redisCache, cfg.WebhookURL)
+
+	// Create scheduler service
+	schedulerService := scheduler.NewScheduler(repo, manager, 1*time.Minute)
 
 	// Create Factory Bot with Webhook
 	factorySettings := telebot.Settings{
@@ -142,12 +146,19 @@ func main() {
 	// Let's Assume I will add `RegisterExistingBot` to manager.
 	manager.RegisterExistingBot(cfg.FactoryBotToken, factory.GetBot()) // Method to be added
 
+	// Start scheduler service
+	schedulerService.Start()
+	log.Println("Scheduler service started")
+
 	// Handle graceful shutdown
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
 
 	log.Println("Shutting down gracefully...")
+
+	// Stop scheduler service
+	schedulerService.Stop()
 
 	// Shutdown HTTP server
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
