@@ -9,6 +9,20 @@ BotForge lets you create your own **personal communication bot**. Instead of sha
 
 **Example**: Someone wants to contact you → They find your bot → Send a message → You receive it and reply — all through the bot, no personal contact needed.
 
+### 📸 Screenshots
+
+<table>
+  <tr>
+    <td align="center"><img src="assets/Screenshots/01_welcome.jpg" width="250"/><br/><b>Welcome Screen</b></td>
+    <td align="center"><img src="assets/Screenshots/02_add_bot.jpg" width="250"/><br/><b>Add New Bot</b></td>
+    <td align="center"><img src="assets/Screenshots/03_bot_added.jpg" width="250"/><br/><b>Bot Added Successfully</b></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="assets/Screenshots/04_admin_panel.jpg" width="250"/><br/><b>Bot Admin Panel</b></td>
+    <td align="center"><img src="assets/Screenshots/05_settings.jpg" width="250"/><br/><b>Bot Settings</b></td>
+  </tr>
+</table>
+
 ## ⚡ Technical Architecture (Deep Dive)
 
 BotForge is engineered for extreme scalability and efficiency, departing from the traditional "process-per-bot" or "long-polling" models. Instead, it utilizes a **Single-Instance Webhook Architecture**.
