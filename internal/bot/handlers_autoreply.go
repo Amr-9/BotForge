@@ -25,28 +25,87 @@ func (m *Manager) handleAutoRepliesMenu(bot *telebot.Bot, token string, ownerCha
 		keywordCount, _ := m.repo.GetAutoReplyCount(ctx, botID, "keyword")
 		commandCount, _ := m.repo.GetAutoReplyCount(ctx, botID, "command")
 
+		// Get current forward setting
+		botModel, _ := m.repo.GetBotByToken(ctx, token)
+		forwardEnabled := true
+		if botModel != nil {
+			forwardEnabled = botModel.ForwardAutoReplies
+		}
+
+		// Forward toggle button text
+		forwardBtnText := "📩 Forward to Admin: ON"
+		if !forwardEnabled {
+			forwardBtnText = "📩 Forward to Admin: OFF"
+		}
+
 		menu := &telebot.ReplyMarkup{}
 		btnAddKeyword := menu.Data("➕ Add Auto-Reply", "add_auto_reply")
 		btnAddCommand := menu.Data("➕ Add Command", "add_custom_cmd")
 		btnListKeywords := menu.Data(fmt.Sprintf("📋 Auto-Replies (%d)", keywordCount), "list_auto_replies")
 		btnListCommands := menu.Data(fmt.Sprintf("📋 Commands (%d)", commandCount), "list_custom_cmds")
+		btnToggleForward := menu.Data(forwardBtnText, "toggle_forward_replies")
 		btnBack := menu.Data("« Back", "child_settings")
 
 		menu.Inline(
 			menu.Row(btnAddKeyword, btnAddCommand),
 			menu.Row(btnListKeywords),
 			menu.Row(btnListCommands),
+			menu.Row(btnToggleForward),
 			menu.Row(btnBack),
 		)
 
-		msg := `🤖 <b>Auto-Replies & Custom Commands</b>
+		forwardStatus := "✅ ON - Auto-replied messages are forwarded to you"
+		if !forwardEnabled {
+			forwardStatus = "❌ OFF - Auto-replied messages are NOT forwarded"
+		}
 
-<b>📍 Auto-Replies:</b> Respond to specific keywords in messages
+		msg := fmt.Sprintf(`🤖 <b>Auto-Replies & Custom Commands</b>
+
+<b>📍 Auto-Replies:</b> Respond to specific keywords (exact match)
 <b>📍 Custom Commands:</b> Respond to commands like /help
 
-✅ Supports Markdown formatting`
+<b>📩 Forward Setting:</b>
+%s
+
+✅ Supports Markdown formatting`, forwardStatus)
 
 		return c.Edit(msg, menu, telebot.ModeHTML)
+	}
+}
+
+// handleToggleForwardReplies toggles the forward_auto_replies setting
+func (m *Manager) handleToggleForwardReplies(bot *telebot.Bot, token string, ownerChat *telebot.Chat) telebot.HandlerFunc {
+	return func(c telebot.Context) error {
+		if c.Sender().ID != ownerChat.ID {
+			return nil
+		}
+
+		ctx := context.Background()
+		m.mu.RLock()
+		botID := m.botIDs[token]
+		m.mu.RUnlock()
+
+		// Get current setting
+		botModel, err := m.repo.GetBotByToken(ctx, token)
+		if err != nil || botModel == nil {
+			return c.Respond(&telebot.CallbackResponse{Text: "Error getting bot settings", ShowAlert: true})
+		}
+
+		// Toggle the setting
+		newValue := !botModel.ForwardAutoReplies
+		if err := m.repo.UpdateBotForwardAutoReplies(ctx, botID, newValue); err != nil {
+			log.Printf("Error updating forward_auto_replies: %v", err)
+			return c.Respond(&telebot.CallbackResponse{Text: "Error updating setting", ShowAlert: true})
+		}
+
+		status := "ON ✅"
+		if !newValue {
+			status = "OFF ❌"
+		}
+		c.Respond(&telebot.CallbackResponse{Text: fmt.Sprintf("Forward to Admin: %s", status)})
+
+		// Reload the menu to show updated status
+		return m.handleAutoRepliesMenu(bot, token, ownerChat)(c)
 	}
 }
 
@@ -361,15 +420,15 @@ func (m *Manager) processAutoReplyState(ctx context.Context, c telebot.Context, 
 	return false, nil
 }
 
-// checkAutoReply checks if a message matches any auto-reply triggers
+// checkAutoReply checks if a message matches any auto-reply triggers (exact match only)
 func (m *Manager) checkAutoReply(ctx context.Context, token string, botID int64, text string) string {
-	text = strings.ToLower(text)
+	text = strings.ToLower(strings.TrimSpace(text))
 
 	// Try cache first - get all keywords for this bot
 	replies, err := m.cache.GetAllAutoReplies(ctx, token, "keyword")
 	if err == nil && len(replies) > 0 {
 		for trigger, response := range replies {
-			if strings.Contains(text, strings.ToLower(trigger)) {
+			if text == strings.ToLower(trigger) {
 				return response
 			}
 		}
@@ -386,8 +445,8 @@ func (m *Manager) checkAutoReply(ctx context.Context, token string, botID int64,
 	for _, r := range dbReplies {
 		if r.IsActive {
 			trigger := strings.ToLower(r.TriggerWord)
-			if (r.MatchType == "contains" && strings.Contains(text, trigger)) ||
-				(r.MatchType == "exact" && text == trigger) {
+			// Only exact match
+			if text == trigger {
 				// Cache for next time
 				m.cache.SetAutoReply(ctx, token, r.TriggerWord, r.Response, "keyword")
 				return r.Response

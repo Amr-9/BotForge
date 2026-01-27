@@ -116,6 +116,11 @@ func (m *MySQL) migrate() error {
 		return err
 	}
 
+	// Safe migration: Add forward_auto_replies column if not exists (default TRUE = forward to admin)
+	if err := m.addColumnIfNotExists("bots", "forward_auto_replies", "BOOLEAN DEFAULT TRUE AFTER start_message"); err != nil {
+		return err
+	}
+
 	return nil
 }
 

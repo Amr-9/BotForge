@@ -35,6 +35,7 @@ func (m *Manager) registerChildHandlers(bot *telebot.Bot, token string, ownerCha
 	bot.Handle(&telebot.Btn{Unique: "list_auto_replies"}, m.handleListAutoReplies(bot, token, ownerChat))
 	bot.Handle(&telebot.Btn{Unique: "list_custom_cmds"}, m.handleListCustomCommands(bot, token, ownerChat))
 	bot.Handle(&telebot.Btn{Unique: "del_reply"}, m.handleDeleteAutoReply(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "toggle_forward_replies"}, m.handleToggleForwardReplies(bot, token, ownerChat))
 
 	bot.Handle(telebot.OnText, m.createMessageHandler(bot, token, ownerChat))
 	bot.Handle(telebot.OnPhoto, m.createMessageHandler(bot, token, ownerChat))
@@ -117,15 +118,26 @@ func (m *Manager) handleUserMessage(ctx context.Context, c telebot.Context, bot 
 		return nil // Silently ignore banned user messages
 	}
 
-	// Check custom commands first (only for text messages starting with /)
+	// Check custom commands and auto-replies
+	autoReplied := false
 	if text != "" {
 		if response := m.checkCustomCommand(ctx, token, botID, text); response != "" {
-			return c.Send(response, telebot.ModeMarkdown)
+			c.Send(response, telebot.ModeMarkdown)
+			autoReplied = true
 		}
 
-		// Check auto-reply keywords
+		// Check auto-reply keywords (exact match only)
 		if response := m.checkAutoReply(ctx, token, botID, text); response != "" {
-			return c.Send(response, telebot.ModeMarkdown)
+			c.Send(response, telebot.ModeMarkdown)
+			autoReplied = true
+		}
+	}
+
+	// Check forward setting - if auto-replied and forwarding is disabled, stop here
+	if autoReplied {
+		botModel, _ := m.repo.GetBotByToken(ctx, token)
+		if botModel != nil && !botModel.ForwardAutoReplies {
+			return nil // Don't forward to admin
 		}
 	}
 

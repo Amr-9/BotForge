@@ -61,7 +61,8 @@ func (r *Repository) GetBotByToken(ctx context.Context, token string) (*models.B
 	}
 
 	var bot models.Bot
-	query := `SELECT id, token, owner_chat_id, is_active, COALESCE(start_message, '') as start_message, created_at
+	query := `SELECT id, token, owner_chat_id, is_active, COALESCE(start_message, '') as start_message, 
+			  COALESCE(forward_auto_replies, TRUE) as forward_auto_replies, created_at
 			  FROM bots WHERE token = ? AND deleted_at IS NULL`
 
 	err = r.mysql.db.GetContext(ctx, &bot, query, encryptedToken)
@@ -229,6 +230,18 @@ func (r *Repository) UpdateBotStartMessage(ctx context.Context, botID int64, mes
 	_, err := r.mysql.db.ExecContext(ctx, query, message, botID)
 	if err != nil {
 		return fmt.Errorf("failed to update start message: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateBotForwardAutoReplies updates the forward_auto_replies setting for a bot
+func (r *Repository) UpdateBotForwardAutoReplies(ctx context.Context, botID int64, forward bool) error {
+	query := `UPDATE bots SET forward_auto_replies = ? WHERE id = ?`
+
+	_, err := r.mysql.db.ExecContext(ctx, query, forward, botID)
+	if err != nil {
+		return fmt.Errorf("failed to update forward_auto_replies: %w", err)
 	}
 
 	return nil
