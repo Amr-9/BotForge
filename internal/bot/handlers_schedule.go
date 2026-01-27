@@ -86,7 +86,10 @@ func (m *Manager) handleScheduleTypeSelection(bot *telebot.Bot, token string, ow
 		}
 
 		ctx := context.Background()
-		scheduleType := c.Callback().Data // "once", "daily", "weekly"
+		rawData := c.Callback().Data
+
+		// Remove "schedule_type_" prefix
+		scheduleType := strings.TrimPrefix(rawData, "schedule_type_")
 
 		// Save schedule type
 		if err := m.cache.SetTempData(ctx, token, c.Sender().ID, "schedule_type", scheduleType); err != nil {
@@ -161,7 +164,10 @@ func (m *Manager) handleScheduleDaySelection(bot *telebot.Bot, token string, own
 		}
 
 		ctx := context.Background()
-		day := c.Callback().Data // "0" to "6"
+		rawData := c.Callback().Data
+
+		// Remove "schedule_day_" prefix
+		day := strings.TrimPrefix(rawData, "schedule_day_")
 
 		// Save day
 		if err := m.cache.SetTempData(ctx, token, c.Sender().ID, "schedule_day", day); err != nil {
@@ -203,7 +209,10 @@ func (m *Manager) handleScheduleTimeSelection(bot *telebot.Bot, token string, ow
 		}
 
 		ctx := context.Background()
-		data := c.Callback().Data // e.g., "1h", "daily_09:00", "weekly_15:00"
+		rawData := c.Callback().Data
+
+		// Remove "schedule_time_" prefix if present
+		data := strings.TrimPrefix(rawData, "schedule_time_")
 
 		var scheduledTime time.Time
 		var timeOfDay string
@@ -476,8 +485,11 @@ func (m *Manager) handlePauseScheduledMessage(bot *telebot.Bot, token string, ow
 		}
 
 		ctx := context.Background()
-		data := c.Callback().Data
-		msgID, _ := strconv.ParseInt(data, 10, 64)
+		rawData := c.Callback().Data
+
+		// Remove "schedule_pause_" prefix
+		msgIDStr := strings.TrimPrefix(rawData, "schedule_pause_")
+		msgID, _ := strconv.ParseInt(msgIDStr, 10, 64)
 
 		m.mu.RLock()
 		botID := m.botIDs[token]
@@ -500,8 +512,11 @@ func (m *Manager) handleResumeScheduledMessage(bot *telebot.Bot, token string, o
 		}
 
 		ctx := context.Background()
-		data := c.Callback().Data
-		msgID, _ := strconv.ParseInt(data, 10, 64)
+		rawData := c.Callback().Data
+
+		// Remove "schedule_resume_" prefix
+		msgIDStr := strings.TrimPrefix(rawData, "schedule_resume_")
+		msgID, _ := strconv.ParseInt(msgIDStr, 10, 64)
 
 		m.mu.RLock()
 		botID := m.botIDs[token]
@@ -524,8 +539,11 @@ func (m *Manager) handleDeleteScheduledMessage(bot *telebot.Bot, token string, o
 		}
 
 		ctx := context.Background()
-		data := c.Callback().Data
-		msgID, _ := strconv.ParseInt(data, 10, 64)
+		rawData := c.Callback().Data
+
+		// Remove "schedule_delete_" prefix
+		msgIDStr := strings.TrimPrefix(rawData, "schedule_delete_")
+		msgID, _ := strconv.ParseInt(msgIDStr, 10, 64)
 
 		m.mu.RLock()
 		botID := m.botIDs[token]
