@@ -54,7 +54,7 @@ func (m *Manager) handleScheduleNewMessage(bot *telebot.Bot, token string, owner
 		ctx := context.Background()
 
 		// Set state
-		if err := m.cache.SetScheduleState(ctx, token, c.Sender().ID, "schedule_awaiting_message"); err != nil {
+		if err := m.cache.SetUserState(ctx, token, c.Sender().ID, "schedule_awaiting_message"); err != nil {
 			return c.Respond(&telebot.CallbackResponse{
 				Text:      "Failed to start scheduling",
 				ShowAlert: true,
@@ -367,6 +367,7 @@ func (m *Manager) handleConfirmSchedule(bot *telebot.Bot, token string, ownerCha
 
 		// Clear cache
 		m.cache.ClearScheduleData(ctx, token, adminID)
+		m.cache.ClearUserState(ctx, token, adminID)
 
 		c.Respond(&telebot.CallbackResponse{Text: "✅ Message scheduled!"})
 
@@ -544,6 +545,7 @@ func (m *Manager) handleCancelSchedule(bot *telebot.Bot, token string) telebot.H
 	return func(c telebot.Context) error {
 		ctx := context.Background()
 		m.cache.ClearScheduleData(ctx, token, c.Sender().ID)
+		m.cache.ClearUserState(ctx, token, c.Sender().ID)
 
 		c.Respond(&telebot.CallbackResponse{Text: "Cancelled"})
 
@@ -589,7 +591,7 @@ func (m *Manager) processScheduleState(ctx context.Context, c telebot.Context, t
 
 		// Save to Redis
 		m.cache.SetScheduleMessageData(ctx, token, c.Sender().ID, msgType, text, fileID, caption)
-		m.cache.SetScheduleState(ctx, token, c.Sender().ID, "schedule_select_type")
+		m.cache.SetUserState(ctx, token, c.Sender().ID, "schedule_select_type")
 
 		// Show type selection
 		menu := &telebot.ReplyMarkup{}
