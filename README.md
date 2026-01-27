@@ -1,6 +1,13 @@
-# BotForge - Telegram Bot Factory
+# BotForge - Telegram Communication Bot Factory
 
-BotForge is a scalable, high-performance Telegram Bot Factory developed in **Go**. It allows users to create and manage their own bots ("child bots") through a master "Factory Bot".
+> 🤖 **Live Demo**: Try it now at [@BotForge1bot](https://t.me/BotForge1bot)
+
+BotForge is a scalable, high-performance **Communication Bot Factory** developed in **Go**. It enables users to instantly create their own **customer support & communication bots** through a master "Factory Bot" — no coding required!
+
+### 💬 What Does It Do?
+BotForge lets you create your own **personal communication bot**. Instead of sharing your phone number or chatting directly with people, they message your bot — and you reply through the bot. Simple!
+
+**Example**: Someone wants to contact you → They find your bot → Send a message → You receive it and reply — all through the bot, no personal contact needed.
 
 ## ⚡ Technical Architecture (Deep Dive)
 
@@ -104,7 +111,7 @@ PORT=4210
 DB_HOST=127.0.0.1:3306
 DB_USER=root
 DB_PASS=password
-DB_NAME=botforge
+DB_NAME=BotForge
 
 # Redis
 REDIS_ADDR=127.0.0.1:6379
@@ -120,14 +127,14 @@ BOT_ENCRYPTION_KEY=00000000000000000000000000000000
 
 1.  **Clone the repository**:
     ```bash
-    git clone https://github.com/your-username/botforge.git
-    cd botforge
+    git clone https://github.com/your-username/BotForge.git
+    cd BotForge
     ```
 
 2.  **Setup Database**:
     Import the schema into your MySQL database:
     ```bash
-    mysql -u root -p botforge < migrate_schema.sql
+    mysql -u root -p BotForge < migrate_schema.sql
     ```
 
 3.  **Install Dependencies**:
@@ -137,14 +144,14 @@ BOT_ENCRYPTION_KEY=00000000000000000000000000000000
 
 4.  **Build**:
     ```bash
-    go build -o botforge ./cmd/server
+    go build -o BotForge ./cmd/server
     ```
 
 ## 🚀 Running the App
 
 Run the compiled binary:
 ```bash
-./botforge
+./BotForge
 ```
 
 The server will start listening on the specified `PORT` (default 4210).
