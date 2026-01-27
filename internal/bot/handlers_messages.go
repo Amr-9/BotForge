@@ -22,6 +22,7 @@ func (m *Manager) registerChildHandlers(bot *telebot.Bot, token string, ownerCha
 	bot.Handle(&telebot.Btn{Unique: "child_settings"}, m.handleChildSettings(bot, token, ownerChat))
 	bot.Handle(&telebot.Btn{Unique: "set_start_msg"}, m.handleSetStartMsgBtn(bot, token, ownerChat))
 	bot.Handle(&telebot.Btn{Unique: "cancel_broadcast"}, m.handleCancelBroadcast(bot, token))
+	bot.Handle(&telebot.Btn{Unique: "confirm_broadcast"}, m.handleConfirmBroadcast(bot, token, ownerChat))
 	bot.Handle(&telebot.Btn{Unique: "back_to_settings"}, m.handleBackToSettings(bot, token, ownerChat))
 	bot.Handle(&telebot.Btn{Unique: "child_main_menu"}, m.handleChildMainMenu(bot, token, ownerChat))
 	bot.Handle(&telebot.Btn{Unique: "banned_list"}, m.handleBannedUsersList(bot, token, ownerChat))
@@ -154,7 +155,7 @@ func (m *Manager) handleAdminReply(ctx context.Context, c telebot.Context, bot *
 	// Check Broadcast Mode
 	isBroadcast, err := m.cache.GetBroadcastMode(ctx, token, c.Sender().ID)
 	if err == nil && isBroadcast {
-		return m.executeBroadcast(ctx, c, bot, token)
+		return m.requestBroadcastConfirmation(ctx, c, bot, token)
 	}
 
 	m.mu.RLock()

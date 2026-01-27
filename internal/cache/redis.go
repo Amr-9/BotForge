@@ -230,3 +230,32 @@ func (r *Redis) InvalidateNotBannedCache(ctx context.Context, botToken string, u
 	key := fmt.Sprintf("notban:%s:%d", botToken, userChatID)
 	return r.client.Del(ctx, key).Err()
 }
+
+// SetPendingBroadcast stores the message ID for pending broadcast confirmation
+func (r *Redis) SetPendingBroadcast(ctx context.Context, botToken string, adminID int64, msgID int) error {
+	key := fmt.Sprintf("pending_broadcast:%s:%d", botToken, adminID)
+	return r.client.Set(ctx, key, strconv.Itoa(msgID), 10*time.Minute).Err()
+}
+
+// GetPendingBroadcast retrieves the pending broadcast message ID
+func (r *Redis) GetPendingBroadcast(ctx context.Context, botToken string, adminID int64) (int, error) {
+	key := fmt.Sprintf("pending_broadcast:%s:%d", botToken, adminID)
+	val, err := r.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	msgID, err := strconv.Atoi(val)
+	if err != nil {
+		return 0, err
+	}
+	return msgID, nil
+}
+
+// ClearPendingBroadcast removes the pending broadcast message
+func (r *Redis) ClearPendingBroadcast(ctx context.Context, botToken string, adminID int64) error {
+	key := fmt.Sprintf("pending_broadcast:%s:%d", botToken, adminID)
+	return r.client.Del(ctx, key).Err()
+}
