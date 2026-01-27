@@ -9,15 +9,19 @@ func (f *Factory) registerHandlers() {
 	// Only /start command - everything else is buttons
 	f.bot.Handle("/start", f.handleStart)
 
-	// Button callbacks
+	// Button callbacks (static)
 	f.bot.Handle(&telebot.Btn{Unique: CallbackAddBot}, f.handleAddBotBtn)
 	f.bot.Handle(&telebot.Btn{Unique: CallbackMyBots}, f.handleMyBotsBtn)
 	f.bot.Handle(&telebot.Btn{Unique: CallbackStats}, f.handleStatsBtn)
 	f.bot.Handle(&telebot.Btn{Unique: CallbackMainMenu}, f.handleMainMenuBtn)
 	f.bot.Handle(&telebot.Btn{Unique: CallbackCancelDel}, f.handleCancelDeleteBtn)
 
-	// Dynamic callbacks (with data)
-	f.bot.Handle(telebot.OnCallback, f.handleDynamicCallback)
+	// Button callbacks (with data)
+	f.bot.Handle(&telebot.Btn{Unique: CallbackBotSelect}, f.handleBotSelectBtn)
+	f.bot.Handle(&telebot.Btn{Unique: CallbackStartBot}, f.handleStartBotBtn)
+	f.bot.Handle(&telebot.Btn{Unique: CallbackStopBot}, f.handleStopBotBtn)
+	f.bot.Handle(&telebot.Btn{Unique: CallbackDeleteBot}, f.handleDeleteBotBtn)
+	f.bot.Handle(&telebot.Btn{Unique: CallbackConfirmDel}, f.handleConfirmDelBtn)
 
 	// Handle text messages (for token submission)
 	f.bot.Handle(telebot.OnText, f.handleText)

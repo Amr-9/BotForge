@@ -20,10 +20,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: windows-latest
-            asset_name: botforge-windows-amd64.exe
-            goos: windows
-            goarch: amd64
           - os: ubuntu-latest
             asset_name: botforge-linux-amd64
             goos: linux
@@ -32,14 +28,6 @@ jobs:
             asset_name: botforge-linux-arm64
             goos: linux
             goarch: arm64
-          - os: macos-latest
-            asset_name: botforge-macos-arm64
-            goos: darwin
-            goarch: arm64
-          - os: macos-15-intel
-            asset_name: botforge-macos-amd64
-            goos: darwin
-            goarch: amd64
 
     steps:
       - name: Checkout code

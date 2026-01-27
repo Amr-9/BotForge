@@ -8,11 +8,11 @@ const (
 	CallbackMyBots     = "my_bots"
 	CallbackStats      = "stats"
 	CallbackMainMenu   = "main_menu"
-	CallbackBotPrefix  = "bot:"
-	CallbackStartBot   = "start:"
-	CallbackStopBot    = "stop:"
-	CallbackDeleteBot  = "delete:"
-	CallbackConfirmDel = "confirm_del:"
+	CallbackBotSelect  = "bot_sel"
+	CallbackStartBot   = "start_bot"
+	CallbackStopBot    = "stop_bot"
+	CallbackDeleteBot  = "del_bot"
+	CallbackConfirmDel = "conf_del"
 	CallbackCancelDel  = "cancel_del"
 )
 

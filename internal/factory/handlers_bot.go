@@ -62,7 +62,7 @@ Use "Add Bot" to add your first bot!`
 		shortToken := bot.Token[:10] + "..."
 		btnText := fmt.Sprintf("%s %s", status, shortToken)
 
-		btn := menu.Data(btnText, CallbackBotPrefix+bot.Token[:20])
+		btn := menu.Data(btnText, CallbackBotSelect, bot.Token[:20])
 		rows = append(rows, menu.Row(btn))
 	}
 
@@ -122,14 +122,14 @@ Select an action:`, maskToken(targetBot.token), status)
 	var rows []telebot.Row
 
 	if isRunning {
-		btnStop := menu.Data("⏹ Stop Bot", CallbackStopBot+tokenPrefix)
+		btnStop := menu.Data("⏹ Stop Bot", CallbackStopBot, tokenPrefix)
 		rows = append(rows, menu.Row(btnStop))
 	} else {
-		btnStart := menu.Data("▶️ Start Bot", CallbackStartBot+tokenPrefix)
+		btnStart := menu.Data("▶️ Start Bot", CallbackStartBot, tokenPrefix)
 		rows = append(rows, menu.Row(btnStart))
 	}
 
-	btnDelete := menu.Data("🗑 Delete Bot", CallbackDeleteBot+tokenPrefix)
+	btnDelete := menu.Data("🗑 Delete Bot", CallbackDeleteBot, tokenPrefix)
 	btnBack := menu.Data("« Back to Bots", CallbackMyBots)
 
 	rows = append(rows, menu.Row(btnDelete))
@@ -222,7 +222,7 @@ Are you sure you want to delete this bot?
 This action cannot be undone!`
 
 	menu := &telebot.ReplyMarkup{}
-	btnConfirm := menu.Data("✅ Yes, Delete", CallbackConfirmDel+tokenPrefix)
+	btnConfirm := menu.Data("✅ Yes, Delete", CallbackConfirmDel, tokenPrefix)
 	btnCancel := menu.Data("❌ Cancel", CallbackCancelDel)
 
 	menu.Inline(
@@ -275,33 +275,34 @@ func (f *Factory) handleCancelDeleteBtn(c telebot.Context) error {
 	return f.handleMyBotsBtn(c)
 }
 
-// handleDynamicCallback handles callbacks with dynamic data
-func (f *Factory) handleDynamicCallback(c telebot.Context) error {
-	data := c.Callback().Unique
+// handleBotSelectBtn handles bot selection from list
+func (f *Factory) handleBotSelectBtn(c telebot.Context) error {
+	tokenPrefix := c.Callback().Data
+	return f.handleBotDetails(c, tokenPrefix)
+}
 
-	switch {
-	case strings.HasPrefix(data, CallbackBotPrefix):
-		tokenPrefix := strings.TrimPrefix(data, CallbackBotPrefix)
-		return f.handleBotDetails(c, tokenPrefix)
+// handleStartBotBtn handles start bot button
+func (f *Factory) handleStartBotBtn(c telebot.Context) error {
+	tokenPrefix := c.Callback().Data
+	return f.handleStartBotAction(c, tokenPrefix)
+}
 
-	case strings.HasPrefix(data, CallbackStartBot):
-		tokenPrefix := strings.TrimPrefix(data, CallbackStartBot)
-		return f.handleStartBotAction(c, tokenPrefix)
+// handleStopBotBtn handles stop bot button
+func (f *Factory) handleStopBotBtn(c telebot.Context) error {
+	tokenPrefix := c.Callback().Data
+	return f.handleStopBotAction(c, tokenPrefix)
+}
 
-	case strings.HasPrefix(data, CallbackStopBot):
-		tokenPrefix := strings.TrimPrefix(data, CallbackStopBot)
-		return f.handleStopBotAction(c, tokenPrefix)
+// handleDeleteBotBtn handles delete bot button
+func (f *Factory) handleDeleteBotBtn(c telebot.Context) error {
+	tokenPrefix := c.Callback().Data
+	return f.handleDeleteBotConfirm(c, tokenPrefix)
+}
 
-	case strings.HasPrefix(data, CallbackDeleteBot):
-		tokenPrefix := strings.TrimPrefix(data, CallbackDeleteBot)
-		return f.handleDeleteBotConfirm(c, tokenPrefix)
-
-	case strings.HasPrefix(data, CallbackConfirmDel):
-		tokenPrefix := strings.TrimPrefix(data, CallbackConfirmDel)
-		return f.handleConfirmDelete(c, tokenPrefix)
-	}
-
-	return nil
+// handleConfirmDelBtn handles confirm delete button
+func (f *Factory) handleConfirmDelBtn(c telebot.Context) error {
+	tokenPrefix := c.Callback().Data
+	return f.handleConfirmDelete(c, tokenPrefix)
 }
 
 // handleStatsBtn shows system stats (admin only)
