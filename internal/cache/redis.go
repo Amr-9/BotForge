@@ -259,3 +259,85 @@ func (r *Redis) ClearPendingBroadcast(ctx context.Context, botToken string, admi
 	key := fmt.Sprintf("pending_broadcast:%s:%d", botToken, adminID)
 	return r.client.Del(ctx, key).Err()
 }
+
+// ==================== Auto-Reply Cache Functions ====================
+
+// SetAutoReply caches an auto-reply response
+func (r *Redis) SetAutoReply(ctx context.Context, botToken, trigger, response, triggerType string) error {
+	key := fmt.Sprintf("autoreply:%s:%s:%s", botToken, triggerType, trigger)
+	return r.client.Set(ctx, key, response, 24*time.Hour).Err()
+}
+
+// GetAutoReply retrieves a cached auto-reply response
+func (r *Redis) GetAutoReply(ctx context.Context, botToken, trigger, triggerType string) (string, error) {
+	key := fmt.Sprintf("autoreply:%s:%s:%s", botToken, triggerType, trigger)
+	val, err := r.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return val, nil
+}
+
+// DeleteAutoReply removes a cached auto-reply
+func (r *Redis) DeleteAutoReply(ctx context.Context, botToken, trigger, triggerType string) error {
+	key := fmt.Sprintf("autoreply:%s:%s:%s", botToken, triggerType, trigger)
+	return r.client.Del(ctx, key).Err()
+}
+
+// GetAllAutoReplies loads all auto-replies of a specific type for a bot from cache
+// Returns a map of trigger -> response
+func (r *Redis) GetAllAutoReplies(ctx context.Context, botToken, triggerType string) (map[string]string, error) {
+	pattern := fmt.Sprintf("autoreply:%s:%s:*", botToken, triggerType)
+	keys, err := r.client.Keys(ctx, pattern).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(keys) == 0 {
+		return nil, nil
+	}
+
+	result := make(map[string]string)
+	prefix := fmt.Sprintf("autoreply:%s:%s:", botToken, triggerType)
+
+	for _, key := range keys {
+		val, err := r.client.Get(ctx, key).Result()
+		if err == nil {
+			// Extract trigger from key
+			trigger := key[len(prefix):]
+			result[trigger] = val
+		}
+	}
+
+	return result, nil
+}
+
+// ==================== Temp Data Cache Functions ====================
+
+// SetTempData stores temporary data during multi-step flows
+func (r *Redis) SetTempData(ctx context.Context, botToken string, userID int64, key, value string) error {
+	redisKey := fmt.Sprintf("temp:%s:%d:%s", botToken, userID, key)
+	return r.client.Set(ctx, redisKey, value, 10*time.Minute).Err()
+}
+
+// GetTempData retrieves temporary data
+func (r *Redis) GetTempData(ctx context.Context, botToken string, userID int64, key string) (string, error) {
+	redisKey := fmt.Sprintf("temp:%s:%d:%s", botToken, userID, key)
+	val, err := r.client.Get(ctx, redisKey).Result()
+	if err == redis.Nil {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return val, nil
+}
+
+// ClearTempData removes temporary data
+func (r *Redis) ClearTempData(ctx context.Context, botToken string, userID int64, key string) error {
+	redisKey := fmt.Sprintf("temp:%s:%d:%s", botToken, userID, key)
+	return r.client.Del(ctx, redisKey).Err()
+}

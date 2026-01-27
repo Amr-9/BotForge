@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"gopkg.in/telebot.v3"
 )
@@ -119,6 +120,9 @@ func (m *Manager) handleConfirmBroadcast(bot *telebot.Bot, token string, ownerCh
 			} else {
 				success++
 			}
+
+			// Rate limiting: 40ms delay between messages (max ~25 msg/sec)
+			time.Sleep(40 * time.Millisecond)
 		}
 
 		report := fmt.Sprintf(`📢 <b>Broadcast Report</b>

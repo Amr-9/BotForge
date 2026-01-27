@@ -89,6 +89,20 @@ func (m *MySQL) migrate() error {
 			INDEX idx_bot_id (bot_id),
 			FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+
+		`CREATE TABLE IF NOT EXISTS auto_replies (
+			id BIGINT AUTO_INCREMENT PRIMARY KEY,
+			bot_id BIGINT NOT NULL,
+			trigger_word VARCHAR(255) NOT NULL,
+			response TEXT NOT NULL,
+			trigger_type ENUM('keyword', 'command') NOT NULL DEFAULT 'keyword',
+			match_type ENUM('exact', 'contains') DEFAULT 'contains',
+			is_active BOOLEAN DEFAULT TRUE,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE KEY idx_bot_trigger (bot_id, trigger_word, trigger_type),
+			INDEX idx_auto_replies_bot (bot_id, is_active),
+			FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 	}
 
 	for _, query := range queries {

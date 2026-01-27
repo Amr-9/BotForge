@@ -28,6 +28,14 @@ func (m *Manager) registerChildHandlers(bot *telebot.Bot, token string, ownerCha
 	bot.Handle(&telebot.Btn{Unique: "banned_list"}, m.handleBannedUsersList(bot, token, ownerChat))
 	bot.Handle(&telebot.Btn{Unique: "unban_user"}, m.handleUnbanUser(bot, token, ownerChat))
 
+	// Auto-Replies handlers
+	bot.Handle(&telebot.Btn{Unique: "auto_replies_menu"}, m.handleAutoRepliesMenu(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "add_auto_reply"}, m.handleAddAutoReply(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "add_custom_cmd"}, m.handleAddCustomCommand(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "list_auto_replies"}, m.handleListAutoReplies(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "list_custom_cmds"}, m.handleListCustomCommands(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "del_reply"}, m.handleDeleteAutoReply(bot, token, ownerChat))
+
 	bot.Handle(telebot.OnText, m.createMessageHandler(bot, token, ownerChat))
 	bot.Handle(telebot.OnPhoto, m.createMessageHandler(bot, token, ownerChat))
 	bot.Handle(telebot.OnVideo, m.createMessageHandler(bot, token, ownerChat))
@@ -76,6 +84,14 @@ func (m *Manager) createMessageHandler(bot *telebot.Bot, token string, ownerChat
 				return c.Send(newMsg, telebot.ModeMarkdown)
 			}
 
+			// Handle auto-reply states
+			if strings.HasPrefix(state, "add_auto_reply") || strings.HasPrefix(state, "add_custom_cmd") {
+				handled, err := m.processAutoReplyState(ctx, c, token, state)
+				if handled {
+					return err
+				}
+			}
+
 			return m.handleAdminReply(ctx, c, bot, token)
 		}
 
@@ -86,6 +102,7 @@ func (m *Manager) createMessageHandler(bot *telebot.Bot, token string, ownerChat
 // handleUserMessage forwards user message to admin with dual write
 func (m *Manager) handleUserMessage(ctx context.Context, c telebot.Context, bot *telebot.Bot, token string, ownerChat *telebot.Chat) error {
 	sender := c.Sender()
+	text := c.Text()
 
 	m.mu.RLock()
 	botID := m.botIDs[token]
@@ -98,6 +115,18 @@ func (m *Manager) handleUserMessage(ctx context.Context, c telebot.Context, bot 
 	}
 	if isBanned {
 		return nil // Silently ignore banned user messages
+	}
+
+	// Check custom commands first (only for text messages starting with /)
+	if text != "" {
+		if response := m.checkCustomCommand(ctx, token, botID, text); response != "" {
+			return c.Send(response, telebot.ModeMarkdown)
+		}
+
+		// Check auto-reply keywords
+		if response := m.checkAutoReply(ctx, token, botID, text); response != "" {
+			return c.Send(response, telebot.ModeMarkdown)
+		}
 	}
 
 	// Check if session exists

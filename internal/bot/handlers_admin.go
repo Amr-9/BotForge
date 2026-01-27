@@ -96,13 +96,20 @@ func (m *Manager) handleChildSettings(bot *telebot.Bot, token string, ownerChat 
 		// Get banned user count for display
 		bannedCount, _ := m.repo.GetBannedUserCount(ctx, botID)
 
+		// Get auto-reply counts
+		keywordCount, _ := m.repo.GetAutoReplyCount(ctx, botID, "keyword")
+		commandCount, _ := m.repo.GetAutoReplyCount(ctx, botID, "command")
+		autoReplyTotal := keywordCount + commandCount
+
 		menu := &telebot.ReplyMarkup{}
 		btnSetStartMsg := menu.Data("📝 Set Start Message", "set_start_msg")
+		btnAutoReplies := menu.Data(fmt.Sprintf("🤖 Auto-Replies (%d)", autoReplyTotal), "auto_replies_menu")
 		btnBannedUsers := menu.Data(fmt.Sprintf("🚫 Banned Users (%d)", bannedCount), "banned_list")
 		btnBack := menu.Data("« Back to Menu", "child_main_menu")
 
 		menu.Inline(
 			menu.Row(btnSetStartMsg),
+			menu.Row(btnAutoReplies),
 			menu.Row(btnBannedUsers),
 			menu.Row(btnBack),
 		)

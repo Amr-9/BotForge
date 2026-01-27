@@ -29,3 +29,15 @@ type BannedUser struct {
 	BannedBy   int64     `db:"banned_by"`
 	CreatedAt  time.Time `db:"created_at"`
 }
+
+// AutoReply represents an auto-reply rule or custom command for a bot
+type AutoReply struct {
+	ID          int64     `db:"id"`
+	BotID       int64     `db:"bot_id"`
+	TriggerWord string    `db:"trigger_word"` // Keyword or command name (without /)
+	Response    string    `db:"response"`     // Response text (supports Markdown)
+	TriggerType string    `db:"trigger_type"` // "keyword" or "command"
+	MatchType   string    `db:"match_type"`   // "exact" or "contains" (for keywords)
+	IsActive    bool      `db:"is_active"`
+	CreatedAt   time.Time `db:"created_at"`
+}
