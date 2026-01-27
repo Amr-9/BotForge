@@ -85,14 +85,20 @@ func (m *Manager) handleScheduleTypeSelection(bot *telebot.Bot, token string, ow
 			return nil
 		}
 
+		// Acknowledge the callback first
+		c.Respond()
+
 		ctx := context.Background()
 		rawData := c.Callback().Data
 
 		// Remove "schedule_type_" prefix
 		scheduleType := strings.TrimPrefix(rawData, "schedule_type_")
 
+		log.Printf("[Schedule] Type selected: %s", scheduleType)
+
 		// Save schedule type
 		if err := m.cache.SetTempData(ctx, token, c.Sender().ID, "schedule_type", scheduleType); err != nil {
+			log.Printf("[Schedule] Error saving type: %v", err)
 			return c.Respond(&telebot.CallbackResponse{Text: "Error", ShowAlert: true})
 		}
 
@@ -163,14 +169,20 @@ func (m *Manager) handleScheduleDaySelection(bot *telebot.Bot, token string, own
 			return nil
 		}
 
+		// Acknowledge callback
+		c.Respond()
+
 		ctx := context.Background()
 		rawData := c.Callback().Data
 
 		// Remove "schedule_day_" prefix
 		day := strings.TrimPrefix(rawData, "schedule_day_")
 
+		log.Printf("[Schedule] Day selected: %s", day)
+
 		// Save day
 		if err := m.cache.SetTempData(ctx, token, c.Sender().ID, "schedule_day", day); err != nil {
+			log.Printf("[Schedule] Error saving day: %v", err)
 			return c.Respond(&telebot.CallbackResponse{Text: "Error", ShowAlert: true})
 		}
 
@@ -208,11 +220,16 @@ func (m *Manager) handleScheduleTimeSelection(bot *telebot.Bot, token string, ow
 			return nil
 		}
 
+		// Acknowledge callback
+		c.Respond()
+
 		ctx := context.Background()
 		rawData := c.Callback().Data
 
 		// Remove "schedule_time_" prefix if present
 		data := strings.TrimPrefix(rawData, "schedule_time_")
+
+		log.Printf("[Schedule] Time selected: %s (from raw: %s)", data, rawData)
 
 		var scheduledTime time.Time
 		var timeOfDay string
