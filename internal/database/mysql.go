@@ -69,9 +69,6 @@ func (m *MySQL) migrate() error {
 			INDEX idx_deleted (deleted_at)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 
-		// Migration: Add deleted_at column if not exists
-		`ALTER TABLE bots ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP NULL DEFAULT NULL;`,
-
 		`CREATE TABLE IF NOT EXISTS message_logs (
 			id BIGINT AUTO_INCREMENT PRIMARY KEY,
 			admin_msg_id INT NOT NULL,
@@ -99,6 +96,32 @@ func (m *MySQL) migrate() error {
 			return err
 		}
 	}
+
+	// Safe migration: Add deleted_at column if not exists
+	if err := m.addColumnIfNotExists("bots", "deleted_at", "TIMESTAMP NULL DEFAULT NULL AFTER is_active"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// addColumnIfNotExists safely adds a column if it doesn't exist
+func (m *MySQL) addColumnIfNotExists(table, column, definition string) error {
+	var count int
+	query := `SELECT COUNT(*) FROM information_schema.COLUMNS
+			  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`
+	if err := m.db.Get(&count, query, table, column); err != nil {
+		return fmt.Errorf("failed to check column existence: %w", err)
+	}
+
+	if count == 0 {
+		alterQuery := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition)
+		if _, err := m.db.Exec(alterQuery); err != nil {
+			return fmt.Errorf("failed to add column %s: %w", column, err)
+		}
+		log.Printf("Added column %s to table %s", column, table)
+	}
+
 	return nil
 }
 
