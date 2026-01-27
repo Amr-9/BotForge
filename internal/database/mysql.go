@@ -76,6 +76,17 @@ func (m *MySQL) migrate() error {
 			INDEX idx_lookup (admin_msg_id, bot_id),
 			FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+
+		`CREATE TABLE IF NOT EXISTS banned_users (
+			id BIGINT AUTO_INCREMENT PRIMARY KEY,
+			bot_id BIGINT NOT NULL,
+			user_chat_id BIGINT NOT NULL,
+			banned_by BIGINT NOT NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE KEY uk_bot_user (bot_id, user_chat_id),
+			INDEX idx_bot_id (bot_id),
+			FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 	}
 
 	for _, query := range queries {

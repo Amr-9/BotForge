@@ -179,3 +179,54 @@ func (r *Redis) ClearUserState(ctx context.Context, botToken string, userID int6
 	key := fmt.Sprintf("state:%s:%d", botToken, userID)
 	return r.client.Del(ctx, key).Err()
 }
+
+// SetUserBanned caches the ban status for a user
+func (r *Redis) SetUserBanned(ctx context.Context, botToken string, userChatID int64) error {
+	key := fmt.Sprintf("ban:%s:%d", botToken, userChatID)
+	return r.client.Set(ctx, key, "1", 24*time.Hour).Err()
+}
+
+// IsUserBanned checks if user is banned (cache layer)
+// Returns: (isBanned, cacheHit, error)
+func (r *Redis) IsUserBanned(ctx context.Context, botToken string, userChatID int64) (bool, bool, error) {
+	key := fmt.Sprintf("ban:%s:%d", botToken, userChatID)
+	_, err := r.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return false, false, nil // Not in cache
+	}
+	if err != nil {
+		return false, false, err
+	}
+	return true, true, nil // Banned and cached
+}
+
+// RemoveUserBan removes the ban status from cache
+func (r *Redis) RemoveUserBan(ctx context.Context, botToken string, userChatID int64) error {
+	key := fmt.Sprintf("ban:%s:%d", botToken, userChatID)
+	return r.client.Del(ctx, key).Err()
+}
+
+// CacheNotBanned caches that a user is NOT banned (negative caching)
+func (r *Redis) CacheNotBanned(ctx context.Context, botToken string, userChatID int64) error {
+	key := fmt.Sprintf("notban:%s:%d", botToken, userChatID)
+	return r.client.Set(ctx, key, "0", 5*time.Minute).Err()
+}
+
+// IsNotBannedCached checks if we have cached that user is NOT banned
+func (r *Redis) IsNotBannedCached(ctx context.Context, botToken string, userChatID int64) (bool, error) {
+	key := fmt.Sprintf("notban:%s:%d", botToken, userChatID)
+	_, err := r.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// InvalidateNotBannedCache removes the "not banned" cache when user gets banned
+func (r *Redis) InvalidateNotBannedCache(ctx context.Context, botToken string, userChatID int64) error {
+	key := fmt.Sprintf("notban:%s:%d", botToken, userChatID)
+	return r.client.Del(ctx, key).Err()
+}

@@ -24,6 +24,8 @@ func (m *Manager) registerChildHandlers(bot *telebot.Bot, token string, ownerCha
 	bot.Handle(&telebot.Btn{Unique: "cancel_broadcast"}, m.handleCancelBroadcast(bot, token))
 	bot.Handle(&telebot.Btn{Unique: "back_to_settings"}, m.handleBackToSettings(bot, token, ownerChat))
 	bot.Handle(&telebot.Btn{Unique: "child_main_menu"}, m.handleChildMainMenu(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "banned_list"}, m.handleBannedUsersList(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "unban_user"}, m.handleUnbanUser(bot, token, ownerChat))
 
 	bot.Handle(telebot.OnText, m.createMessageHandler(bot, token, ownerChat))
 	bot.Handle(telebot.OnPhoto, m.createMessageHandler(bot, token, ownerChat))
@@ -88,8 +90,14 @@ func (m *Manager) handleUserMessage(ctx context.Context, c telebot.Context, bot 
 	botID := m.botIDs[token]
 	m.mu.RUnlock()
 
-	// Check if sender is blocked (implementation dependent, not shown in original but good practice)
-	// For now just original logic
+	// Check if user is banned - silently ignore their messages
+	isBanned, err := m.checkUserBanned(ctx, token, botID, sender.ID)
+	if err != nil {
+		log.Printf("Error checking ban status: %v", err)
+	}
+	if isBanned {
+		return nil // Silently ignore banned user messages
+	}
 
 	// Check if session exists
 	hasSession, err := m.cache.HasSession(ctx, token, sender.ID)
@@ -183,8 +191,16 @@ func (m *Manager) handleAdminReply(ctx context.Context, c telebot.Context, bot *
 		return c.Reply("Could not find the original message sender. The message may be too old.")
 	}
 
+	// Get command text (lowercase, trimmed)
+	cmdText := strings.ToLower(strings.TrimSpace(msg.Text))
+
+	// BAN Command: Check if admin sent "ban" or "/ban"
+	if cmdText == "ban" || cmdText == "/ban" {
+		return m.handleBanCommand(ctx, c, bot, token, userChatID)
+	}
+
 	// INFO Command: Check if admin sent "info" (case-insensitive)
-	if strings.ToLower(strings.TrimSpace(msg.Text)) == "info" {
+	if cmdText == "info" {
 		chat, err := bot.ChatByID(userChatID)
 		if err != nil {
 			log.Printf("Failed to get chat info: %v", err)
@@ -197,12 +213,20 @@ func (m *Manager) handleAdminReply(ctx context.Context, c telebot.Context, bot *
 			dateStr = firstMsgDate.Format("2006-01-02 15:04:05")
 		}
 
+		// Check ban status
+		isBanned, _ := m.repo.IsUserBanned(ctx, botID, userChatID)
+		banStatus := "No"
+		if isBanned {
+			banStatus = "Yes"
+		}
+
 		infoText := fmt.Sprintf(`👤 <b>From:</b> %s %s
 🔗 <b>Username:</b> @%s
 🆔 <b>ID:</b> <code>%d</code>
 
-📅 <b>First Message:</b> %s`,
-			chat.FirstName, chat.LastName, chat.Username, chat.ID, dateStr)
+📅 <b>First Message:</b> %s
+🚫 <b>Banned:</b> %s`,
+			chat.FirstName, chat.LastName, chat.Username, chat.ID, dateStr, banStatus)
 
 		return c.Reply(infoText, telebot.ModeHTML)
 	}

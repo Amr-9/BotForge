@@ -28,8 +28,22 @@ func (m *Manager) handleChildStart(bot *telebot.Bot, token string, ownerChat *te
 			return c.Reply("🤖 <b>Bot Admin Panel</b>\n\nSelect an option:", menu, telebot.ModeHTML)
 		}
 
-		// Retrieve Start Message from DB
 		ctx := context.Background()
+
+		// Check if user is banned - silently ignore
+		m.mu.RLock()
+		botID := m.botIDs[token]
+		m.mu.RUnlock()
+
+		isBanned, err := m.checkUserBanned(ctx, token, botID, sender.ID)
+		if err != nil {
+			log.Printf("Error checking ban status: %v", err)
+		}
+		if isBanned {
+			return nil // Silently ignore banned user
+		}
+
+		// Retrieve Start Message from DB
 		botModel, err := m.repo.GetBotByToken(ctx, token)
 		if err != nil {
 			log.Printf("Failed to get bot for start msg: %v", err)
@@ -74,12 +88,22 @@ func (m *Manager) handleChildSettings(bot *telebot.Bot, token string, ownerChat 
 			return nil
 		}
 
+		ctx := context.Background()
+		m.mu.RLock()
+		botID := m.botIDs[token]
+		m.mu.RUnlock()
+
+		// Get banned user count for display
+		bannedCount, _ := m.repo.GetBannedUserCount(ctx, botID)
+
 		menu := &telebot.ReplyMarkup{}
 		btnSetStartMsg := menu.Data("📝 Set Start Message", "set_start_msg")
+		btnBannedUsers := menu.Data(fmt.Sprintf("🚫 Banned Users (%d)", bannedCount), "banned_list")
 		btnBack := menu.Data("« Back to Menu", "child_main_menu")
 
 		menu.Inline(
 			menu.Row(btnSetStartMsg),
+			menu.Row(btnBannedUsers),
 			menu.Row(btnBack),
 		)
 

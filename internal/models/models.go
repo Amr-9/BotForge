@@ -20,3 +20,12 @@ type MessageLog struct {
 	BotID      int64     `db:"bot_id"`
 	CreatedAt  time.Time `db:"created_at"`
 }
+
+// BannedUser represents a banned user for a specific bot
+type BannedUser struct {
+	ID         int64     `db:"id"`
+	BotID      int64     `db:"bot_id"`
+	UserChatID int64     `db:"user_chat_id"`
+	BannedBy   int64     `db:"banned_by"`
+	CreatedAt  time.Time `db:"created_at"`
+}
