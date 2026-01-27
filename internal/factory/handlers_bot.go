@@ -2,13 +2,44 @@ package factory
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"strings"
 	"time"
 
 	"gopkg.in/telebot.v3"
 )
+
+// getBotUsername retrieves the bot's username from Telegram API
+func getBotUsername(token string) string {
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/getMe", token)
+	resp, err := http.Get(url)
+	if err != nil {
+		log.Printf("Failed to get bot username: %v", err)
+		return "Unknown"
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Ok     bool `json:"ok"`
+		Result struct {
+			Username string `json:"username"`
+		} `json:"result"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Printf("Failed to decode bot info: %v", err)
+		return "Unknown"
+	}
+
+	if !result.Ok || result.Result.Username == "" {
+		return "Unknown"
+	}
+
+	return result.Result.Username
+}
 
 // handleAddBotBtn handles add bot button
 func (f *Factory) handleAddBotBtn(c telebot.Context) error {
@@ -89,6 +120,7 @@ func (f *Factory) handleBotDetails(c telebot.Context, tokenPrefix string) error 
 	var targetBot *struct {
 		token       string
 		ownerChatID int64
+		createdAt   time.Time
 	}
 
 	for _, bot := range bots {
@@ -96,7 +128,8 @@ func (f *Factory) handleBotDetails(c telebot.Context, tokenPrefix string) error 
 			targetBot = &struct {
 				token       string
 				ownerChatID int64
-			}{token: bot.Token, ownerChatID: bot.OwnerChatID}
+				createdAt   time.Time
+			}{token: bot.Token, ownerChatID: bot.OwnerChatID, createdAt: bot.CreatedAt}
 			break
 		}
 	}
@@ -111,12 +144,20 @@ func (f *Factory) handleBotDetails(c telebot.Context, tokenPrefix string) error 
 		status = "🟢 Running"
 	}
 
+	// Get bot username
+	username := getBotUsername(targetBot.token)
+
+	// Format created date
+	createdAt := targetBot.createdAt.Format("2006-01-02 3:04 PM")
+
 	msg := fmt.Sprintf(`🤖 <b>Bot Details</b>
 
+<b>Username:</b> @%s
 <b>Token:</b> <code>%s</code>
 <b>Status:</b> %s
+<b>Created At:</b> %s
 
-Select an action:`, maskToken(targetBot.token), status)
+Select an action:`, username, maskToken(targetBot.token), status, createdAt)
 
 	menu := &telebot.ReplyMarkup{}
 	var rows []telebot.Row
