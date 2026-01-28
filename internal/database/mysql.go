@@ -10,10 +10,18 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
+// ============================================
+// Types & Constants
+// ============================================
+
 // MySQL wraps the sqlx.DB connection
 type MySQL struct {
 	db *sqlx.DB
 }
+
+// ============================================
+// Constructor & Connection
+// ============================================
 
 // NewMySQL creates a new MySQL connection with retry logic
 func NewMySQL(dsn string) (*MySQL, error) {
@@ -54,107 +62,109 @@ func NewMySQL(dsn string) (*MySQL, error) {
 	return mysql, nil
 }
 
-// migrate creates the required tables
-func (m *MySQL) migrate() error {
-	queries := []string{
-		`CREATE TABLE IF NOT EXISTS bots (
-			id BIGINT AUTO_INCREMENT PRIMARY KEY,
-			token VARCHAR(255) NOT NULL UNIQUE,
-			owner_chat_id BIGINT NOT NULL,
-			is_active BOOLEAN DEFAULT TRUE,
-			deleted_at TIMESTAMP NULL DEFAULT NULL,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			INDEX idx_owner (owner_chat_id),
-			INDEX idx_active (is_active),
-			INDEX idx_deleted (deleted_at)
-		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+// DB returns the underlying sqlx.DB for advanced operations
+func (m *MySQL) DB() *sqlx.DB {
+	return m.db
+}
 
-		`CREATE TABLE IF NOT EXISTS message_logs (
-			id BIGINT AUTO_INCREMENT PRIMARY KEY,
-			admin_msg_id INT NOT NULL,
-			user_chat_id BIGINT NOT NULL,
-			bot_id BIGINT NOT NULL,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			INDEX idx_lookup (admin_msg_id, bot_id),
-			FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE
-		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+// Close closes the database connection
+func (m *MySQL) Close() error {
+	return m.db.Close()
+}
 
-		`CREATE TABLE IF NOT EXISTS banned_users (
-			id BIGINT AUTO_INCREMENT PRIMARY KEY,
-			bot_id BIGINT NOT NULL,
-			user_chat_id BIGINT NOT NULL,
-			banned_by BIGINT NOT NULL,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			UNIQUE KEY uk_bot_user (bot_id, user_chat_id),
-			INDEX idx_bot_id (bot_id),
-			FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE
-		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+// Ping checks if database connection is alive
+func (m *MySQL) Ping(ctx context.Context) error {
+	return m.db.PingContext(ctx)
+}
 
-		`CREATE TABLE IF NOT EXISTS auto_replies (
-			id BIGINT AUTO_INCREMENT PRIMARY KEY,
-			bot_id BIGINT NOT NULL,
-			trigger_word VARCHAR(255) NOT NULL,
-			response TEXT NOT NULL,
-			trigger_type ENUM('keyword', 'command') NOT NULL DEFAULT 'keyword',
-			match_type ENUM('exact', 'contains') DEFAULT 'contains',
-			is_active BOOLEAN DEFAULT TRUE,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			UNIQUE KEY idx_bot_trigger (bot_id, trigger_word, trigger_type),
-			INDEX idx_auto_replies_bot (bot_id, is_active),
-			FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE
-		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+// ============================================
+// Schema Definitions
+// ============================================
 
-		`CREATE TABLE IF NOT EXISTS scheduled_messages (
-			id BIGINT AUTO_INCREMENT PRIMARY KEY,
-			bot_id BIGINT NOT NULL,
-			owner_chat_id BIGINT NOT NULL,
-			message_type ENUM('text', 'photo', 'video', 'document') NOT NULL DEFAULT 'text',
-			message_text TEXT,
-			file_id VARCHAR(255),
-			caption TEXT,
-			schedule_type ENUM('once', 'daily', 'weekly') NOT NULL,
-			scheduled_time DATETIME NOT NULL,
-			time_of_day TIME,
-			day_of_week TINYINT,
-			status ENUM('pending', 'sent', 'failed', 'paused', 'cancelled') NOT NULL DEFAULT 'pending',
-			last_sent_at DATETIME NULL,
-			next_run_at DATETIME NULL,
-			failure_reason TEXT,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-			INDEX idx_bot_id (bot_id),
-			INDEX idx_status_next_run (status, next_run_at),
-			INDEX idx_owner (owner_chat_id),
-			FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE
-		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
-	}
+// baseTableQueries contains CREATE TABLE statements for all base tables
+var baseTableQueries = []string{
+	// Bots table
+	`CREATE TABLE IF NOT EXISTS bots (
+		id BIGINT AUTO_INCREMENT PRIMARY KEY,
+		token VARCHAR(255) NOT NULL UNIQUE,
+		owner_chat_id BIGINT NOT NULL,
+		is_active BOOLEAN DEFAULT TRUE,
+		deleted_at TIMESTAMP NULL DEFAULT NULL,
+		start_message TEXT,
+		forward_auto_replies BOOLEAN DEFAULT TRUE,
+		forced_sub_enabled BOOLEAN DEFAULT FALSE,
+		forced_sub_message TEXT,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		INDEX idx_owner (owner_chat_id),
+		INDEX idx_active (is_active),
+		INDEX idx_deleted (deleted_at)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 
-	for _, query := range queries {
-		if _, err := m.db.Exec(query); err != nil {
-			return err
-		}
-	}
+	// Message logs table
+	`CREATE TABLE IF NOT EXISTS message_logs (
+		id BIGINT AUTO_INCREMENT PRIMARY KEY,
+		admin_msg_id INT NOT NULL,
+		user_chat_id BIGINT NOT NULL,
+		bot_id BIGINT NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		INDEX idx_lookup (admin_msg_id, bot_id),
+		FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 
-	// Safe migration: Add deleted_at column if not exists
-	if err := m.addColumnIfNotExists("bots", "deleted_at", "TIMESTAMP NULL DEFAULT NULL AFTER is_active"); err != nil {
-		return err
-	}
+	// Banned users table
+	`CREATE TABLE IF NOT EXISTS banned_users (
+		id BIGINT AUTO_INCREMENT PRIMARY KEY,
+		bot_id BIGINT NOT NULL,
+		user_chat_id BIGINT NOT NULL,
+		banned_by BIGINT NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE KEY uk_bot_user (bot_id, user_chat_id),
+		INDEX idx_bot_id (bot_id),
+		FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 
-	// Safe migration: Add forward_auto_replies column if not exists (default TRUE = forward to admin)
-	if err := m.addColumnIfNotExists("bots", "forward_auto_replies", "BOOLEAN DEFAULT TRUE AFTER start_message"); err != nil {
-		return err
-	}
+	// Auto replies table
+	`CREATE TABLE IF NOT EXISTS auto_replies (
+		id BIGINT AUTO_INCREMENT PRIMARY KEY,
+		bot_id BIGINT NOT NULL,
+		trigger_word VARCHAR(255) NOT NULL,
+		response TEXT NOT NULL,
+		trigger_type ENUM('keyword', 'command') NOT NULL DEFAULT 'keyword',
+		match_type ENUM('exact', 'contains') DEFAULT 'contains',
+		is_active BOOLEAN DEFAULT TRUE,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE KEY idx_bot_trigger (bot_id, trigger_word, trigger_type),
+		INDEX idx_auto_replies_bot (bot_id, is_active),
+		FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 
-	// Safe migration: Add forced subscription columns
-	if err := m.addColumnIfNotExists("bots", "forced_sub_enabled", "BOOLEAN DEFAULT FALSE AFTER forward_auto_replies"); err != nil {
-		return err
-	}
-	if err := m.addColumnIfNotExists("bots", "forced_sub_message", "TEXT AFTER forced_sub_enabled"); err != nil {
-		return err
-	}
+	// Scheduled messages table
+	`CREATE TABLE IF NOT EXISTS scheduled_messages (
+		id BIGINT AUTO_INCREMENT PRIMARY KEY,
+		bot_id BIGINT NOT NULL,
+		owner_chat_id BIGINT NOT NULL,
+		message_type ENUM('text', 'photo', 'video', 'document') NOT NULL DEFAULT 'text',
+		message_text TEXT,
+		file_id VARCHAR(255),
+		caption TEXT,
+		schedule_type ENUM('once', 'daily', 'weekly') NOT NULL,
+		scheduled_time DATETIME NOT NULL,
+		time_of_day TIME,
+		day_of_week TINYINT,
+		status ENUM('pending', 'sent', 'failed', 'paused', 'cancelled') NOT NULL DEFAULT 'pending',
+		last_sent_at DATETIME NULL,
+		next_run_at DATETIME NULL,
+		failure_reason TEXT,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		INDEX idx_bot_id (bot_id),
+		INDEX idx_status_next_run (status, next_run_at),
+		INDEX idx_owner (owner_chat_id),
+		FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 
-	// Create forced_channels table for forced subscription feature
-	forcedChannelsTable := `CREATE TABLE IF NOT EXISTS forced_channels (
+	// Forced channels table (for forced subscription feature)
+	`CREATE TABLE IF NOT EXISTS forced_channels (
 		id BIGINT AUTO_INCREMENT PRIMARY KEY,
 		bot_id BIGINT NOT NULL,
 		channel_id BIGINT NOT NULL,
@@ -166,13 +176,26 @@ func (m *MySQL) migrate() error {
 		UNIQUE KEY uk_bot_channel (bot_id, channel_id),
 		INDEX idx_bot_active (bot_id, is_active),
 		FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE
-	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`
-	if _, err := m.db.Exec(forcedChannelsTable); err != nil {
-		return fmt.Errorf("failed to create forced_channels table: %w", err)
-	}
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+}
 
+// ============================================
+// Migration Functions
+// ============================================
+
+// migrate runs all database migrations
+func (m *MySQL) migrate() error {
+	for _, query := range baseTableQueries {
+		if _, err := m.db.Exec(query); err != nil {
+			return fmt.Errorf("failed to create table: %w", err)
+		}
+	}
 	return nil
 }
+
+// ============================================
+// Helper Functions
+// ============================================
 
 // addColumnIfNotExists safely adds a column if it doesn't exist
 func (m *MySQL) addColumnIfNotExists(table, column, definition string) error {
@@ -192,19 +215,4 @@ func (m *MySQL) addColumnIfNotExists(table, column, definition string) error {
 	}
 
 	return nil
-}
-
-// DB returns the underlying sqlx.DB for advanced operations
-func (m *MySQL) DB() *sqlx.DB {
-	return m.db
-}
-
-// Close closes the database connection
-func (m *MySQL) Close() error {
-	return m.db.Close()
-}
-
-// Ping checks if database connection is alive
-func (m *MySQL) Ping(ctx context.Context) error {
-	return m.db.PingContext(ctx)
 }
