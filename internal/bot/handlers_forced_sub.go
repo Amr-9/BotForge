@@ -305,36 +305,73 @@ func (m *Manager) processAddForcedChannel(ctx context.Context, c telebot.Context
 	var channelUsername string
 	var channelTitle string
 	var inviteLink string
+	var foundChannel bool
 
-	// Check if it's a forwarded message from a channel
-	if c.Message().SenderChat != nil && c.Message().SenderChat.Type == telebot.ChatChannel {
-		chat := c.Message().SenderChat
-		channelID = chat.ID
-		channelUsername = chat.Username
-		channelTitle = chat.Title
-	} else {
-		// Try to parse as username
+	msg := c.Message()
+
+	// Method 1: Check if it's a forwarded message from a channel (OriginalChat)
+	if msg.OriginalChat != nil && msg.OriginalChat.Type == telebot.ChatChannel {
+		channelID = msg.OriginalChat.ID
+		channelUsername = msg.OriginalChat.Username
+		channelTitle = msg.OriginalChat.Title
+		foundChannel = true
+		log.Printf("Found channel from OriginalChat: %s (%d)", channelTitle, channelID)
+	}
+
+	// Method 2: Check SenderChat (when posting as channel)
+	if !foundChannel && msg.SenderChat != nil && msg.SenderChat.Type == telebot.ChatChannel {
+		channelID = msg.SenderChat.ID
+		channelUsername = msg.SenderChat.Username
+		channelTitle = msg.SenderChat.Title
+		foundChannel = true
+		log.Printf("Found channel from SenderChat: %s (%d)", channelTitle, channelID)
+	}
+
+	// Method 3: Try to parse as username or channel ID
+	if !foundChannel {
 		text := strings.TrimSpace(c.Text())
 		if text == "" {
 			return c.Reply("Please forward a message from the channel or send the channel username.")
 		}
 
 		// Remove @ if present
-		username := strings.TrimPrefix(text, "@")
+		text = strings.TrimPrefix(text, "@")
 
-		// Try to get chat info
-		chat, err := bot.ChatByUsername(username)
-		if err != nil {
-			return c.Reply("❌ Channel not found. Please check the username or forward a message from the channel.")
+		// Check if it's a numeric ID (for private channels)
+		if numID, err := strconv.ParseInt(text, 10, 64); err == nil {
+			// Try to get chat by ID
+			chat, err := bot.ChatByID(numID)
+			if err == nil && chat.Type == telebot.ChatChannel {
+				channelID = chat.ID
+				channelUsername = chat.Username
+				channelTitle = chat.Title
+				foundChannel = true
+				log.Printf("Found channel by ID: %s (%d)", channelTitle, channelID)
+			}
 		}
 
-		if chat.Type != telebot.ChatChannel {
-			return c.Reply("❌ This is not a channel. Please provide a channel username.")
-		}
+		// Try username lookup (only works if bot is member)
+		if !foundChannel {
+			chat, err := bot.ChatByUsername(text)
+			if err != nil {
+				log.Printf("ChatByUsername failed for %s: %v", text, err)
+				return c.Reply("❌ Channel not found.\n\n<b>Solutions:</b>\n1. Make sure the bot is an admin in the channel first\n2. Forward any message from the channel instead of typing the username", telebot.ModeHTML)
+			}
 
-		channelID = chat.ID
-		channelUsername = chat.Username
-		channelTitle = chat.Title
+			if chat.Type != telebot.ChatChannel {
+				return c.Reply("❌ This is not a channel. Please provide a channel username.")
+			}
+
+			channelID = chat.ID
+			channelUsername = chat.Username
+			channelTitle = chat.Title
+			foundChannel = true
+			log.Printf("Found channel by username: %s (%d)", channelTitle, channelID)
+		}
+	}
+
+	if !foundChannel {
+		return c.Reply("❌ Could not detect the channel. Please forward a message from the channel.")
 	}
 
 	// Check if bot is admin in the channel
@@ -378,13 +415,13 @@ func (m *Manager) processAddForcedChannel(ctx context.Context, c telebot.Context
 	m.cache.ClearUserState(ctx, token, c.Sender().ID)
 
 	// Success message
-	msg := fmt.Sprintf("✅ Channel <b>%s</b> added successfully!", channelTitle)
+	successMsg := fmt.Sprintf("✅ Channel <b>%s</b> added successfully!", channelTitle)
 
 	menu := &telebot.ReplyMarkup{}
 	btnBack := menu.Data("« Back to Forced Sub Settings", "forced_sub_menu")
 	menu.Inline(menu.Row(btnBack))
 
-	return c.Reply(msg, menu, telebot.ModeHTML)
+	return c.Reply(successMsg, menu, telebot.ModeHTML)
 }
 
 // handleListForcedChannels shows list of configured channels with remove option
