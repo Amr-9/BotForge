@@ -355,7 +355,22 @@ func (m *Manager) processAddForcedChannel(ctx context.Context, c telebot.Context
 			chat, err := bot.ChatByUsername(text)
 			if err != nil {
 				log.Printf("ChatByUsername failed for %s: %v", text, err)
-				return c.Reply("❌ Channel not found.\n\n<b>Solutions:</b>\n1. Make sure the bot is an admin in the channel first\n2. Forward any message from the channel instead of typing the username", telebot.ModeHTML)
+				errorMsg := fmt.Sprintf(`❌ <b>Channel not found</b>
+
+<b>Username:</b> @%s
+
+<b>This usually means:</b>
+• The bot is not an admin in the channel yet
+• The username is incorrect
+
+<b>How to fix:</b>
+1. First, add the bot as an admin in your channel
+2. Then try one of these methods:
+   • Forward any message from the channel
+   • Or type the username again
+
+<i>Tip: Forwarding a message is the easiest way!</i>`, text)
+				return c.Reply(errorMsg, telebot.ModeHTML)
 			}
 
 			if chat.Type != telebot.ChatChannel {
@@ -378,12 +393,36 @@ func (m *Manager) processAddForcedChannel(ctx context.Context, c telebot.Context
 	botMember, err := bot.ChatMemberOf(&telebot.Chat{ID: channelID}, bot.Me)
 	if err != nil {
 		m.cache.ClearUserState(ctx, token, c.Sender().ID)
-		return c.Reply("❌ Cannot access this channel. Make sure the bot is added as an admin.")
+		log.Printf("ChatMemberOf failed for channel %d: %v", channelID, err)
+		errorMsg := fmt.Sprintf(`❌ <b>Cannot access this channel</b>
+
+<b>Channel:</b> %s
+
+<b>How to fix:</b>
+1. Open your channel settings
+2. Go to Administrators
+3. Add the bot as an admin
+4. Then try again
+
+<i>The bot needs admin access to check if users are subscribed.</i>`, channelTitle)
+		return c.Reply(errorMsg, telebot.ModeHTML)
 	}
 
 	if botMember.Role != telebot.Administrator && botMember.Role != telebot.Creator {
 		m.cache.ClearUserState(ctx, token, c.Sender().ID)
-		return c.Reply("❌ Bot must be an admin in the channel to check subscriptions.")
+		errorMsg := fmt.Sprintf(`❌ <b>Bot is not an admin</b>
+
+<b>Channel:</b> %s
+<b>Current Role:</b> %s
+
+<b>How to fix:</b>
+1. Open your channel settings
+2. Go to Administrators
+3. Promote the bot to admin
+4. Then try again
+
+<i>The bot needs admin access to check if users are subscribed.</i>`, channelTitle, botMember.Role)
+		return c.Reply(errorMsg, telebot.ModeHTML)
 	}
 
 	// Check if channel already exists
