@@ -10,6 +10,8 @@ type Bot struct {
 	IsActive           bool      `db:"is_active"`
 	StartMessage       string    `db:"start_message"`
 	ForwardAutoReplies bool      `db:"forward_auto_replies"` // Forward auto-replied messages to admin
+	ForcedSubEnabled   bool      `db:"forced_sub_enabled"`   // Enable forced channel subscription
+	ForcedSubMessage   string    `db:"forced_sub_message"`   // Custom message for non-subscribers
 	CreatedAt          time.Time `db:"created_at"`
 }
 
@@ -29,6 +31,18 @@ type BannedUser struct {
 	UserChatID int64     `db:"user_chat_id"`
 	BannedBy   int64     `db:"banned_by"`
 	CreatedAt  time.Time `db:"created_at"`
+}
+
+// ForcedChannel represents a channel that users must subscribe to
+type ForcedChannel struct {
+	ID              int64     `db:"id"`
+	BotID           int64     `db:"bot_id"`
+	ChannelID       int64     `db:"channel_id"`
+	ChannelUsername string    `db:"channel_username"` // For public channels (@username)
+	ChannelTitle    string    `db:"channel_title"`
+	InviteLink      string    `db:"invite_link"` // For private channels
+	IsActive        bool      `db:"is_active"`
+	CreatedAt       time.Time `db:"created_at"`
 }
 
 // AutoReply represents an auto-reply rule or custom command for a bot

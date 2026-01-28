@@ -447,3 +447,75 @@ func (r *Redis) ClearScheduleData(ctx context.Context, botToken string, adminID 
 
 	return r.client.Del(ctx, keys...).Err()
 }
+
+// ==================== Forced Subscription Cache Functions ====================
+
+// SetForcedSubEnabled caches the forced subscription enabled state for a bot
+func (r *Redis) SetForcedSubEnabled(ctx context.Context, botToken string, enabled bool) error {
+	key := fmt.Sprintf("forced_sub_enabled:%s", botToken)
+	val := "0"
+	if enabled {
+		val = "1"
+	}
+	return r.client.Set(ctx, key, val, 1*time.Hour).Err()
+}
+
+// GetForcedSubEnabled retrieves the cached forced subscription enabled state
+// Returns: (enabled, cacheHit, error)
+func (r *Redis) GetForcedSubEnabled(ctx context.Context, botToken string) (bool, bool, error) {
+	key := fmt.Sprintf("forced_sub_enabled:%s", botToken)
+	val, err := r.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return false, false, nil // Cache miss
+	}
+	if err != nil {
+		return false, false, err
+	}
+	return val == "1", true, nil
+}
+
+// InvalidateForcedSubEnabled clears the cached enabled state
+func (r *Redis) InvalidateForcedSubEnabled(ctx context.Context, botToken string) error {
+	key := fmt.Sprintf("forced_sub_enabled:%s", botToken)
+	return r.client.Del(ctx, key).Err()
+}
+
+// SetUserSubVerified marks a user as verified subscriber (short TTL)
+func (r *Redis) SetUserSubVerified(ctx context.Context, botToken string, userID int64) error {
+	key := fmt.Sprintf("sub_verified:%s:%d", botToken, userID)
+	return r.client.Set(ctx, key, "1", 5*time.Minute).Err()
+}
+
+// IsUserSubVerified checks if user subscription was recently verified
+// Returns: (verified, error)
+func (r *Redis) IsUserSubVerified(ctx context.Context, botToken string, userID int64) (bool, error) {
+	key := fmt.Sprintf("sub_verified:%s:%d", botToken, userID)
+	_, err := r.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// ClearUserSubVerified clears user verification status (for re-check)
+func (r *Redis) ClearUserSubVerified(ctx context.Context, botToken string, userID int64) error {
+	key := fmt.Sprintf("sub_verified:%s:%d", botToken, userID)
+	return r.client.Del(ctx, key).Err()
+}
+
+// ClearAllUserSubVerified clears all user verification statuses for a bot
+// Used when channels are added/removed
+func (r *Redis) ClearAllUserSubVerified(ctx context.Context, botToken string) error {
+	pattern := fmt.Sprintf("sub_verified:%s:*", botToken)
+	keys, err := r.client.Keys(ctx, pattern).Result()
+	if err != nil {
+		return err
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	return r.client.Del(ctx, keys...).Err()
+}

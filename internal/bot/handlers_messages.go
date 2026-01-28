@@ -37,6 +37,16 @@ func (m *Manager) registerChildHandlers(bot *telebot.Bot, token string, ownerCha
 	bot.Handle(&telebot.Btn{Unique: "del_reply"}, m.handleDeleteAutoReply(bot, token, ownerChat))
 	bot.Handle(&telebot.Btn{Unique: "toggle_forward_replies"}, m.handleToggleForwardReplies(bot, token, ownerChat))
 
+	// Forced Subscription handlers
+	bot.Handle(&telebot.Btn{Unique: "forced_sub_menu"}, m.handleForcedSubMenu(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "toggle_forced_sub"}, m.handleToggleForcedSub(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "add_forced_channel"}, m.handleAddForcedChannel(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "list_forced_channels"}, m.handleListForcedChannels(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "del_forced_channel"}, m.handleRemoveForcedChannel(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "set_forced_sub_msg"}, m.handleSetForcedSubMsg(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "clear_forced_sub_msg"}, m.handleClearForcedSubMsg(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "check_subscription"}, m.handleCheckSubscription(bot, token, ownerChat))
+
 	// Schedule handlers
 	bot.Handle(&telebot.Btn{Unique: "schedule_menu"}, m.handleScheduleMenu(bot, token, ownerChat))
 	bot.Handle(&telebot.Btn{Unique: "schedule_new"}, m.handleScheduleNewMessage(bot, token, ownerChat))
@@ -137,6 +147,14 @@ func (m *Manager) createMessageHandler(bot *telebot.Bot, token string, ownerChat
 				}
 			}
 
+			// Handle forced subscription states
+			if state == "add_forced_channel" || state == "set_forced_sub_message" {
+				handled, err := m.processForcedSubState(ctx, c, bot, token, state)
+				if handled {
+					return err
+				}
+			}
+
 			return m.handleAdminReply(ctx, c, bot, token)
 		}
 
@@ -160,6 +178,15 @@ func (m *Manager) handleUserMessage(ctx context.Context, c telebot.Context, bot 
 	}
 	if isBanned {
 		return nil // Silently ignore banned user messages
+	}
+
+	// Check forced subscription
+	isSubscribed, menu, blockedMsg, err := m.checkForcedSubscription(ctx, c, bot, token, botID, sender.ID)
+	if err != nil {
+		log.Printf("Error checking forced subscription: %v", err)
+	}
+	if !isSubscribed {
+		return c.Send(blockedMsg, menu, telebot.ModeHTML)
 	}
 
 	// Check custom commands and auto-replies

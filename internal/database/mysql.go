@@ -145,6 +145,32 @@ func (m *MySQL) migrate() error {
 		return err
 	}
 
+	// Safe migration: Add forced subscription columns
+	if err := m.addColumnIfNotExists("bots", "forced_sub_enabled", "BOOLEAN DEFAULT FALSE AFTER forward_auto_replies"); err != nil {
+		return err
+	}
+	if err := m.addColumnIfNotExists("bots", "forced_sub_message", "TEXT AFTER forced_sub_enabled"); err != nil {
+		return err
+	}
+
+	// Create forced_channels table for forced subscription feature
+	forcedChannelsTable := `CREATE TABLE IF NOT EXISTS forced_channels (
+		id BIGINT AUTO_INCREMENT PRIMARY KEY,
+		bot_id BIGINT NOT NULL,
+		channel_id BIGINT NOT NULL,
+		channel_username VARCHAR(255),
+		channel_title VARCHAR(255),
+		invite_link VARCHAR(255),
+		is_active BOOLEAN DEFAULT TRUE,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE KEY uk_bot_channel (bot_id, channel_id),
+		INDEX idx_bot_active (bot_id, is_active),
+		FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`
+	if _, err := m.db.Exec(forcedChannelsTable); err != nil {
+		return fmt.Errorf("failed to create forced_channels table: %w", err)
+	}
+
 	return nil
 }
 

@@ -45,6 +45,15 @@ func (m *Manager) handleChildStart(bot *telebot.Bot, token string, ownerChat *te
 			return nil // Silently ignore banned user
 		}
 
+		// Check forced subscription
+		isSubscribed, menu, blockedMsg, err := m.checkForcedSubscription(ctx, c, bot, token, botID, sender.ID)
+		if err != nil {
+			log.Printf("Error checking forced subscription: %v", err)
+		}
+		if !isSubscribed {
+			return c.Send(blockedMsg, menu, telebot.ModeHTML)
+		}
+
 		// Retrieve Start Message from DB
 		botModel, err := m.repo.GetBotByToken(ctx, token)
 		if err != nil {
@@ -105,15 +114,25 @@ func (m *Manager) handleChildSettings(bot *telebot.Bot, token string, ownerChat 
 		commandCount, _ := m.repo.GetAutoReplyCount(ctx, botID, "command")
 		autoReplyTotal := keywordCount + commandCount
 
+		// Get forced subscription info
+		forcedChannelCount, _ := m.repo.GetForcedChannelCount(ctx, botID)
+		botModel, _ := m.repo.GetBotByToken(ctx, token)
+		forcedSubStatus := "OFF"
+		if botModel != nil && botModel.ForcedSubEnabled {
+			forcedSubStatus = "ON"
+		}
+
 		menu := &telebot.ReplyMarkup{}
 		btnSetStartMsg := menu.Data("📝 Set Start Message", "set_start_msg")
 		btnAutoReplies := menu.Data(fmt.Sprintf("🤖 Auto-Replies (%d)", autoReplyTotal), "auto_replies_menu")
+		btnForcedSub := menu.Data(fmt.Sprintf("🔐 Forced Sub [%s] (%d)", forcedSubStatus, forcedChannelCount), "forced_sub_menu")
 		btnBannedUsers := menu.Data(fmt.Sprintf("🚫 Banned Users (%d)", bannedCount), "banned_list")
 		btnBack := menu.Data("« Back to Menu", "child_main_menu")
 
 		menu.Inline(
 			menu.Row(btnSetStartMsg),
 			menu.Row(btnAutoReplies),
+			menu.Row(btnForcedSub),
 			menu.Row(btnBannedUsers),
 			menu.Row(btnBack),
 		)
