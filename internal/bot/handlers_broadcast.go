@@ -40,12 +40,16 @@ func (m *Manager) handleCancelBroadcast(bot *telebot.Bot, token string) telebot.
 		menu := &telebot.ReplyMarkup{}
 		btnStats := menu.Data("📊 Statistics", "child_stats")
 		btnBroadcast := menu.Data("📢 Broadcast", "child_broadcast")
+		btnSchedule := menu.Data("📅 Schedule Message", "schedule_menu")
+		btnSettings := menu.Data("⚙️ Settings", "child_settings")
 		menu.Inline(
 			menu.Row(btnStats),
 			menu.Row(btnBroadcast),
+			menu.Row(btnSchedule),
+			menu.Row(btnSettings),
 		)
 
-		return c.Edit("📢 Broadcast cancelled.", menu, telebot.ModeHTML)
+		return c.Edit("🤖 <b>Bot Admin Panel</b>\n\nSelect an option:", menu, telebot.ModeHTML)
 	}
 }
 
@@ -136,9 +140,13 @@ func (m *Manager) handleConfirmBroadcast(bot *telebot.Bot, token string, ownerCh
 		menu := &telebot.ReplyMarkup{}
 		btnStats := menu.Data("📊 Statistics", "child_stats")
 		btnBroadcast := menu.Data("📢 Broadcast", "child_broadcast")
+		btnSchedule := menu.Data("📅 Schedule Message", "schedule_menu")
+		btnSettings := menu.Data("⚙️ Settings", "child_settings")
 		menu.Inline(
 			menu.Row(btnStats),
 			menu.Row(btnBroadcast),
+			menu.Row(btnSchedule),
+			menu.Row(btnSettings),
 		)
 
 		return c.Send(report, menu, telebot.ModeHTML)

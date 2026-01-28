@@ -461,8 +461,44 @@ func (m *Manager) handleListScheduledMessages(bot *telebot.Bot, token string, ow
 				scheduleInfo = fmt.Sprintf("Weekly on %s", dayNames[*schedMsg.DayOfWeek])
 			}
 
-			msg += fmt.Sprintf("%d️⃣ %s %s\n   Type: %s | Status: %s\n   Next: %s\n",
-				i+1, statusIcon, scheduleInfo, schedMsg.MessageType, schedMsg.Status,
+			// Build message preview
+			var preview string
+			var previewIcon string
+			if schedMsg.MessageType == models.MessageTypeText {
+				previewIcon = "📝"
+				if len(schedMsg.MessageText) > 50 {
+					preview = schedMsg.MessageText[:50] + "..."
+				} else {
+					preview = schedMsg.MessageText
+				}
+			} else {
+				// Set icon based on message type
+				switch schedMsg.MessageType {
+				case models.MessageTypePhoto:
+					previewIcon = "🖼️"
+				case models.MessageTypeVideo:
+					previewIcon = "🎬"
+				case models.MessageTypeDocument:
+					previewIcon = "📎"
+				default:
+					previewIcon = "📨"
+				}
+				// Use caption if available, otherwise show media type
+				if schedMsg.Caption != "" {
+					if len(schedMsg.Caption) > 50 {
+						preview = schedMsg.Caption[:50] + "..."
+					} else {
+						preview = schedMsg.Caption
+					}
+				} else {
+					preview = fmt.Sprintf("[%s]", schedMsg.MessageType)
+				}
+			}
+
+			msg += fmt.Sprintf("%d️⃣ %s %s\n", i+1, statusIcon, scheduleInfo)
+			msg += fmt.Sprintf("   %s \"%s\"\n", previewIcon, preview)
+			msg += fmt.Sprintf("   Type: %s | Status: %s\n   Next: %s\n\n",
+				schedMsg.MessageType, schedMsg.Status,
 				schedMsg.NextRunAt.Format("2006-01-02 15:04"))
 
 			// Add action buttons
