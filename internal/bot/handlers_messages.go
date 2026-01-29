@@ -373,19 +373,11 @@ func (m *Manager) handleAdminReply(ctx context.Context, c telebot.Context, bot *
 	}
 
 	if showConfirmation {
-		// Use setMessageReaction API directly for better compatibility
-		params := map[string]interface{}{
-			"chat_id":    msg.Chat.ID,
-			"message_id": msg.ID,
-			"reaction": []map[string]string{
-				{"type": "emoji", "emoji": "✅"},
-			},
-		}
-		_, err = bot.Raw("setMessageReaction", params)
+		err = bot.React(msg.Chat, msg, telebot.ReactionOptions{
+			Reactions: []telebot.Reaction{{Type: "emoji", Emoji: "👍"}},
+		})
 		if err != nil {
-			// Fallback to text reply if reaction fails
 			log.Printf("⚠️ Reaction Failed: %v", err)
-			return c.Reply("✅")
 		}
 	}
 
