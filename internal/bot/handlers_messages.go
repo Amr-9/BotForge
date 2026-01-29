@@ -379,10 +379,11 @@ func (m *Manager) handleAdminReply(ctx context.Context, c telebot.Context, bot *
 				{Type: "emoji", Emoji: "✅"},
 			},
 		}
-		err = bot.React(c.Message().Chat, c.Message(), reactionOpts)
+		// msg is the admin's message - use it directly
+		err = bot.React(msg.Chat, msg, reactionOpts)
 		if err != nil {
 			// Fallback to text reply if reaction fails
-			log.Printf("Failed to set reaction: %v", err)
+			log.Printf("⚠️ Reaction Failed: %v", err)
 			return c.Reply("✅")
 		}
 	}
