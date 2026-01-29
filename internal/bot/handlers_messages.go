@@ -27,6 +27,7 @@ func (m *Manager) registerChildHandlers(bot *telebot.Bot, token string, ownerCha
 	bot.Handle(&telebot.Btn{Unique: "child_main_menu"}, m.handleChildMainMenu(bot, token, ownerChat))
 	bot.Handle(&telebot.Btn{Unique: "banned_list"}, m.handleBannedUsersList(bot, token, ownerChat))
 	bot.Handle(&telebot.Btn{Unique: "unban_user"}, m.handleUnbanUser(bot, token, ownerChat))
+	bot.Handle(&telebot.Btn{Unique: "toggle_sent_confirm"}, m.handleToggleSentConfirmation(bot, token, ownerChat))
 
 	// Auto-Replies handlers
 	bot.Handle(&telebot.Btn{Unique: "auto_replies_menu"}, m.handleAutoRepliesMenu(bot, token, ownerChat))
@@ -352,7 +353,41 @@ func (m *Manager) handleAdminReply(ctx context.Context, c telebot.Context, bot *
 		return c.Reply("Failed to send message to user. They may have blocked the bot.")
 	}
 
-	return c.Reply("✅ Message sent successfully!")
+	// Check if we should show confirmation (use cache for performance)
+	showConfirmation := true // default
+	cachedValue, cacheHit, cacheErr := m.cache.GetShowSentConfirmation(ctx, token)
+	if cacheErr != nil {
+		log.Printf("Cache error: %v", cacheErr)
+	}
+
+	if cacheHit {
+		showConfirmation = cachedValue
+	} else {
+		// Cache miss - load from DB and cache it
+		botModel, _ := m.repo.GetBotByToken(ctx, token)
+		if botModel != nil {
+			showConfirmation = botModel.ShowSentConfirmation
+			// Cache the value for future requests
+			m.cache.SetShowSentConfirmation(ctx, token, showConfirmation)
+		}
+	}
+
+	if showConfirmation {
+		// Use Reaction instead of text message for cleaner chat
+		reactionOpts := telebot.ReactionOptions{
+			Reactions: []telebot.Reaction{
+				{Type: "emoji", Emoji: "✅"},
+			},
+		}
+		err = bot.React(c.Message().Chat, c.Message(), reactionOpts)
+		if err != nil {
+			// Fallback to text reply if reaction fails
+			log.Printf("Failed to set reaction: %v", err)
+			return c.Reply("✅")
+		}
+	}
+
+	return nil
 }
 
 // formatUserInfo creates a formatted user info header

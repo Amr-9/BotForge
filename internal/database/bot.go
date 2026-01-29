@@ -52,7 +52,8 @@ func (r *Repository) GetBotByToken(ctx context.Context, token string) (*models.B
 	query := `SELECT id, token, owner_chat_id, is_active, COALESCE(start_message, '') as start_message,
 			  COALESCE(forward_auto_replies, TRUE) as forward_auto_replies,
 			  COALESCE(forced_sub_enabled, FALSE) as forced_sub_enabled,
-			  COALESCE(forced_sub_message, '') as forced_sub_message, created_at
+			  COALESCE(forced_sub_message, '') as forced_sub_message,
+			  COALESCE(show_sent_confirmation, TRUE) as show_sent_confirmation, created_at
 			  FROM bots WHERE token = ? AND deleted_at IS NULL`
 
 	err = r.mysql.db.GetContext(ctx, &bot, query, encryptedToken)
@@ -230,6 +231,18 @@ func (r *Repository) UpdateBotForwardAutoReplies(ctx context.Context, botID int6
 	_, err := r.mysql.db.ExecContext(ctx, query, forward, botID)
 	if err != nil {
 		return fmt.Errorf("failed to update forward_auto_replies: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateBotShowSentConfirmation updates the show_sent_confirmation setting for a bot
+func (r *Repository) UpdateBotShowSentConfirmation(ctx context.Context, botID int64, show bool) error {
+	query := `UPDATE bots SET show_sent_confirmation = ? WHERE id = ?`
+
+	_, err := r.mysql.db.ExecContext(ctx, query, show, botID)
+	if err != nil {
+		return fmt.Errorf("failed to update show_sent_confirmation: %w", err)
 	}
 
 	return nil

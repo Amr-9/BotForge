@@ -4,15 +4,16 @@ import "time"
 
 // Bot represents a child bot registered by a user
 type Bot struct {
-	ID                 int64     `db:"id"`
-	Token              string    `db:"token"`
-	OwnerChatID        int64     `db:"owner_chat_id"`
-	IsActive           bool      `db:"is_active"`
-	StartMessage       string    `db:"start_message"`
-	ForwardAutoReplies bool      `db:"forward_auto_replies"` // Forward auto-replied messages to admin
-	ForcedSubEnabled   bool      `db:"forced_sub_enabled"`   // Enable forced channel subscription
-	ForcedSubMessage   string    `db:"forced_sub_message"`   // Custom message for non-subscribers
-	CreatedAt          time.Time `db:"created_at"`
+	ID                   int64     `db:"id"`
+	Token                string    `db:"token"`
+	OwnerChatID          int64     `db:"owner_chat_id"`
+	IsActive             bool      `db:"is_active"`
+	StartMessage         string    `db:"start_message"`
+	ForwardAutoReplies   bool      `db:"forward_auto_replies"`   // Forward auto-replied messages to admin
+	ForcedSubEnabled     bool      `db:"forced_sub_enabled"`     // Enable forced channel subscription
+	ForcedSubMessage     string    `db:"forced_sub_message"`     // Custom message for non-subscribers
+	ShowSentConfirmation bool      `db:"show_sent_confirmation"` // Show "Message sent successfully" to admin
+	CreatedAt            time.Time `db:"created_at"`
 }
 
 // MessageLog stores the mapping between admin message and user chat

@@ -94,6 +94,7 @@ var baseTableQueries = []string{
 		forward_auto_replies BOOLEAN DEFAULT TRUE,
 		forced_sub_enabled BOOLEAN DEFAULT FALSE,
 		forced_sub_message TEXT,
+		show_sent_confirmation BOOLEAN DEFAULT TRUE,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		INDEX idx_owner (owner_chat_id),
 		INDEX idx_active (is_active),
@@ -190,6 +191,12 @@ func (m *MySQL) migrate() error {
 			return fmt.Errorf("failed to create table: %w", err)
 		}
 	}
+
+	// Add new columns for existing tables
+	if err := m.addColumnIfNotExists("bots", "show_sent_confirmation", "BOOLEAN DEFAULT TRUE"); err != nil {
+		log.Printf("Warning: %v", err)
+	}
+
 	return nil
 }
 

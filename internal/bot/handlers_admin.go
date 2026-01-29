@@ -122,11 +122,18 @@ func (m *Manager) handleChildSettings(bot *telebot.Bot, token string, ownerChat 
 			forcedSubStatus = "ON"
 		}
 
+		// Get sent confirmation status
+		sentConfirmStatus := "ON"
+		if botModel != nil && !botModel.ShowSentConfirmation {
+			sentConfirmStatus = "OFF"
+		}
+
 		menu := &telebot.ReplyMarkup{}
 		btnSetStartMsg := menu.Data("📝 Set Start Message", "set_start_msg")
 		btnAutoReplies := menu.Data(fmt.Sprintf("🤖 Auto-Replies (%d)", autoReplyTotal), "auto_replies_menu")
 		btnForcedSub := menu.Data(fmt.Sprintf("🔐 Forced Sub [%s] (%d)", forcedSubStatus, forcedChannelCount), "forced_sub_menu")
 		btnBannedUsers := menu.Data(fmt.Sprintf("🚫 Banned Users (%d)", bannedCount), "banned_list")
+		btnSentConfirm := menu.Data(fmt.Sprintf("✅ Sent Confirmation [%s]", sentConfirmStatus), "toggle_sent_confirm")
 		btnBack := menu.Data("« Back to Menu", "child_main_menu")
 
 		menu.Inline(
@@ -134,6 +141,7 @@ func (m *Manager) handleChildSettings(bot *telebot.Bot, token string, ownerChat 
 			menu.Row(btnAutoReplies),
 			menu.Row(btnForcedSub),
 			menu.Row(btnBannedUsers),
+			menu.Row(btnSentConfirm),
 			menu.Row(btnBack),
 		)
 
@@ -216,5 +224,44 @@ func (m *Manager) handleChildStats(bot *telebot.Bot, token string, ownerChat *te
 		)
 
 		return c.Edit(msg, menu, telebot.ModeHTML)
+	}
+}
+
+// handleToggleSentConfirmation toggles the "Message sent successfully" notification
+func (m *Manager) handleToggleSentConfirmation(bot *telebot.Bot, token string, ownerChat *telebot.Chat) telebot.HandlerFunc {
+	return func(c telebot.Context) error {
+		if c.Sender().ID != ownerChat.ID {
+			return nil
+		}
+
+		ctx := context.Background()
+		m.mu.RLock()
+		botID := m.botIDs[token]
+		m.mu.RUnlock()
+
+		// Get current setting
+		botModel, err := m.repo.GetBotByToken(ctx, token)
+		if err != nil || botModel == nil {
+			return c.Respond(&telebot.CallbackResponse{Text: "❌ Failed to get settings!", ShowAlert: true})
+		}
+
+		// Toggle the setting
+		newValue := !botModel.ShowSentConfirmation
+		if err := m.repo.UpdateBotShowSentConfirmation(ctx, botID, newValue); err != nil {
+			return c.Respond(&telebot.CallbackResponse{Text: "❌ Failed to update setting!", ShowAlert: true})
+		}
+
+		// Update cache immediately for better performance
+		m.cache.SetShowSentConfirmation(ctx, token, newValue)
+
+		status := "ON"
+		if !newValue {
+			status = "OFF"
+		}
+
+		c.Respond(&telebot.CallbackResponse{Text: fmt.Sprintf("✅ Sent confirmation is now %s", status)})
+
+		// Refresh settings menu
+		return m.handleChildSettings(bot, token, ownerChat)(c)
 	}
 }

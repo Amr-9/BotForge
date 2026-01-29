@@ -519,3 +519,35 @@ func (r *Redis) ClearAllUserSubVerified(ctx context.Context, botToken string) er
 	}
 	return r.client.Del(ctx, keys...).Err()
 }
+
+// ==================== Bot Settings Cache Functions ====================
+
+// SetShowSentConfirmation caches the ShowSentConfirmation setting for a bot
+func (r *Redis) SetShowSentConfirmation(ctx context.Context, botToken string, show bool) error {
+	key := fmt.Sprintf("setting:sent_confirm:%s", botToken)
+	val := "0"
+	if show {
+		val = "1"
+	}
+	return r.client.Set(ctx, key, val, 1*time.Hour).Err()
+}
+
+// GetShowSentConfirmation retrieves the cached ShowSentConfirmation setting
+// Returns: (show, cacheHit, error)
+func (r *Redis) GetShowSentConfirmation(ctx context.Context, botToken string) (bool, bool, error) {
+	key := fmt.Sprintf("setting:sent_confirm:%s", botToken)
+	val, err := r.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return true, false, nil // Cache miss, default to true
+	}
+	if err != nil {
+		return true, false, err
+	}
+	return val == "1", true, nil
+}
+
+// InvalidateShowSentConfirmation clears the cached ShowSentConfirmation setting
+func (r *Redis) InvalidateShowSentConfirmation(ctx context.Context, botToken string) error {
+	key := fmt.Sprintf("setting:sent_confirm:%s", botToken)
+	return r.client.Del(ctx, key).Err()
+}
