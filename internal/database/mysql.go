@@ -197,6 +197,17 @@ func (m *MySQL) migrate() error {
 		log.Printf("Warning: %v", err)
 	}
 
+	// Add media support columns to auto_replies table
+	if err := m.addColumnIfNotExists("auto_replies", "message_type", "VARCHAR(20) NOT NULL DEFAULT 'text'"); err != nil {
+		log.Printf("Warning: %v", err)
+	}
+	if err := m.addColumnIfNotExists("auto_replies", "file_id", "VARCHAR(255) DEFAULT NULL"); err != nil {
+		log.Printf("Warning: %v", err)
+	}
+	if err := m.addColumnIfNotExists("auto_replies", "caption", "TEXT DEFAULT NULL"); err != nil {
+		log.Printf("Warning: %v", err)
+	}
+
 	return nil
 }
 

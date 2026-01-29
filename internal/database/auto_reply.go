@@ -10,13 +10,15 @@ import (
 
 // ==================== Auto-Reply Functions ====================
 
-// CreateAutoReply creates a new auto-reply or custom command
-func (r *Repository) CreateAutoReply(ctx context.Context, botID int64, trigger, response, triggerType, matchType string) error {
-	query := `INSERT INTO auto_replies (bot_id, trigger_word, response, trigger_type, match_type, is_active)
-			  VALUES (?, ?, ?, ?, ?, TRUE)
-			  ON DUPLICATE KEY UPDATE response = ?, match_type = ?, is_active = TRUE`
+// CreateAutoReply creates a new auto-reply or custom command with optional media support
+func (r *Repository) CreateAutoReply(ctx context.Context, botID int64, trigger, response, messageType, fileID, caption, triggerType, matchType string) error {
+	query := `INSERT INTO auto_replies (bot_id, trigger_word, response, message_type, file_id, caption, trigger_type, match_type, is_active)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, TRUE)
+			  ON DUPLICATE KEY UPDATE response = ?, message_type = ?, file_id = ?, caption = ?, match_type = ?, is_active = TRUE`
 
-	_, err := r.mysql.db.ExecContext(ctx, query, botID, trigger, response, triggerType, matchType, response, matchType)
+	_, err := r.mysql.db.ExecContext(ctx, query,
+		botID, trigger, response, messageType, fileID, caption, triggerType, matchType,
+		response, messageType, fileID, caption, matchType)
 	if err != nil {
 		return fmt.Errorf("failed to create auto-reply: %w", err)
 	}
@@ -26,7 +28,7 @@ func (r *Repository) CreateAutoReply(ctx context.Context, botID int64, trigger, 
 // GetAutoReplies retrieves all auto-replies or commands for a bot
 func (r *Repository) GetAutoReplies(ctx context.Context, botID int64, triggerType string) ([]models.AutoReply, error) {
 	var replies []models.AutoReply
-	query := `SELECT id, bot_id, trigger_word, response, trigger_type, match_type, is_active, created_at
+	query := `SELECT id, bot_id, trigger_word, response, message_type, file_id, caption, trigger_type, match_type, is_active, created_at
 			  FROM auto_replies WHERE bot_id = ? AND trigger_type = ? AND is_active = TRUE
 			  ORDER BY created_at DESC`
 
@@ -40,7 +42,7 @@ func (r *Repository) GetAutoReplies(ctx context.Context, botID int64, triggerTyp
 // GetAutoReplyByTrigger finds an auto-reply by its trigger word
 func (r *Repository) GetAutoReplyByTrigger(ctx context.Context, botID int64, trigger, triggerType string) (*models.AutoReply, error) {
 	var reply models.AutoReply
-	query := `SELECT id, bot_id, trigger_word, response, trigger_type, match_type, is_active, created_at
+	query := `SELECT id, bot_id, trigger_word, response, message_type, file_id, caption, trigger_type, match_type, is_active, created_at
 			  FROM auto_replies WHERE bot_id = ? AND trigger_word = ? AND trigger_type = ?`
 
 	err := r.mysql.db.GetContext(ctx, &reply, query, botID, trigger, triggerType)
@@ -56,7 +58,7 @@ func (r *Repository) GetAutoReplyByTrigger(ctx context.Context, botID int64, tri
 // GetAutoReplyByID retrieves an auto-reply by its ID
 func (r *Repository) GetAutoReplyByID(ctx context.Context, replyID int64) (*models.AutoReply, error) {
 	var reply models.AutoReply
-	query := `SELECT id, bot_id, trigger_word, response, trigger_type, match_type, is_active, created_at
+	query := `SELECT id, bot_id, trigger_word, response, message_type, file_id, caption, trigger_type, match_type, is_active, created_at
 			  FROM auto_replies WHERE id = ?`
 
 	err := r.mysql.db.GetContext(ctx, &reply, query, replyID)

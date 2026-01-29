@@ -6,6 +6,8 @@ import (
 	"log"
 	"strings"
 
+	"github.com/Amr-9/botforge/internal/cache"
+	"github.com/Amr-9/botforge/internal/models"
 	"gopkg.in/telebot.v3"
 )
 
@@ -198,7 +200,29 @@ func (m *Manager) handleListAutoReplies(bot *telebot.Bot, token string, ownerCha
 			if len(displayTrigger) > 20 {
 				displayTrigger = displayTrigger[:17] + "..."
 			}
-			btn := menu.Data(fmt.Sprintf("🗑 %s", displayTrigger), "del_reply", fmt.Sprintf("%d", r.ID))
+
+			// Add icon based on message type
+			icon := "📝" // Default for text
+			switch r.MessageType {
+			case models.MessageTypePhoto:
+				icon = "🖼"
+			case models.MessageTypeVideo:
+				icon = "🎬"
+			case models.MessageTypeAudio:
+				icon = "🎵"
+			case models.MessageTypeVoice:
+				icon = "🎤"
+			case models.MessageTypeDocument:
+				icon = "📎"
+			case models.MessageTypeAnimation:
+				icon = "🎞"
+			case models.MessageTypeVideoNote:
+				icon = "⚫"
+			case models.MessageTypeSticker:
+				icon = "😀"
+			}
+
+			btn := menu.Data(fmt.Sprintf("%s 🗑 %s", icon, displayTrigger), "del_reply", fmt.Sprintf("%d", r.ID))
 			rows = append(rows, menu.Row(btn))
 		}
 
@@ -239,7 +263,28 @@ func (m *Manager) handleListCustomCommands(bot *telebot.Bot, token string, owner
 
 		var rows []telebot.Row
 		for _, cmd := range commands {
-			btn := menu.Data(fmt.Sprintf("🗑 /%s", cmd.TriggerWord), "del_reply", fmt.Sprintf("%d", cmd.ID))
+			// Add icon based on message type
+			icon := "📝" // Default for text
+			switch cmd.MessageType {
+			case models.MessageTypePhoto:
+				icon = "🖼"
+			case models.MessageTypeVideo:
+				icon = "🎬"
+			case models.MessageTypeAudio:
+				icon = "🎵"
+			case models.MessageTypeVoice:
+				icon = "🎤"
+			case models.MessageTypeDocument:
+				icon = "📎"
+			case models.MessageTypeAnimation:
+				icon = "🎞"
+			case models.MessageTypeVideoNote:
+				icon = "⚫"
+			case models.MessageTypeSticker:
+				icon = "😀"
+			}
+
+			btn := menu.Data(fmt.Sprintf("%s 🗑 /%s", icon, cmd.TriggerWord), "del_reply", fmt.Sprintf("%d", cmd.ID))
 			rows = append(rows, menu.Row(btn))
 		}
 
@@ -326,11 +371,64 @@ func (m *Manager) processAutoReplyState(ctx context.Context, c telebot.Context, 
 		btnCancel := menu.Data("❌ Cancel", "auto_replies_menu")
 		menu.Inline(menu.Row(btnCancel))
 
-		return true, c.Send(fmt.Sprintf("✅ Keyword: <code>%s</code>\n\nNow send the auto-reply response.\n\n💡 Supports Markdown formatting like:\n<code>*bold* and _italic_</code>", text), menu, telebot.ModeHTML)
+		return true, c.Send(fmt.Sprintf(`✅ Keyword: <code>%s</code>
+
+Now send the auto-reply response.
+
+You can send:
+• Text (supports Markdown)
+• Photo, Video, Audio, Voice
+• Document, GIF, Sticker
+• Video note (circle video)`, text), menu, telebot.ModeHTML)
 
 	case "add_auto_reply_response":
-		if text == "" {
-			return true, c.Reply("⚠️ Please send a text response.")
+		// Determine message type and extract content
+		msgType := models.MessageTypeText
+		responseText := text
+		fileID := ""
+		caption := ""
+
+		msg := c.Message()
+		if msg.Photo != nil {
+			msgType = models.MessageTypePhoto
+			fileID = msg.Photo.FileID
+			caption = msg.Caption
+			responseText = ""
+		} else if msg.Video != nil {
+			msgType = models.MessageTypeVideo
+			fileID = msg.Video.FileID
+			caption = msg.Caption
+			responseText = ""
+		} else if msg.Audio != nil {
+			msgType = models.MessageTypeAudio
+			fileID = msg.Audio.FileID
+			caption = msg.Caption
+			responseText = ""
+		} else if msg.Voice != nil {
+			msgType = models.MessageTypeVoice
+			fileID = msg.Voice.FileID
+			caption = msg.Caption
+			responseText = ""
+		} else if msg.Document != nil {
+			msgType = models.MessageTypeDocument
+			fileID = msg.Document.FileID
+			caption = msg.Caption
+			responseText = ""
+		} else if msg.Animation != nil {
+			msgType = models.MessageTypeAnimation
+			fileID = msg.Animation.FileID
+			caption = msg.Caption
+			responseText = ""
+		} else if msg.VideoNote != nil {
+			msgType = models.MessageTypeVideoNote
+			fileID = msg.VideoNote.FileID
+			responseText = ""
+		} else if msg.Sticker != nil {
+			msgType = models.MessageTypeSticker
+			fileID = msg.Sticker.FileID
+			responseText = ""
+		} else if responseText == "" {
+			return true, c.Reply("⚠️ Please send a text message or media (photo, video, audio, voice, document, animation, video note, or sticker).")
 		}
 
 		// Get trigger from temp storage
@@ -340,21 +438,38 @@ func (m *Manager) processAutoReplyState(ctx context.Context, c telebot.Context, 
 			return true, c.Reply("⚠️ Session expired. Please try again.")
 		}
 
-		// Save to DB
-		err := m.repo.CreateAutoReply(ctx, botID, trigger, text, "keyword", "contains")
+		// Save to DB with media fields
+		err := m.repo.CreateAutoReply(ctx, botID, trigger, responseText, msgType, fileID, caption, "keyword", "contains")
 		if err != nil {
 			log.Printf("Error creating auto-reply: %v", err)
 			return true, c.Reply("❌ Error saving.")
 		}
 
-		// Cache for fast lookup
-		m.cache.SetAutoReply(ctx, token, trigger, text, "keyword")
+		// Cache with media info
+		cacheData := &cache.AutoReplyCache{
+			Response:    responseText,
+			MessageType: msgType,
+			FileID:      fileID,
+			Caption:     caption,
+		}
+		m.cache.SetAutoReplyWithMedia(ctx, token, trigger, cacheData, "keyword")
 
 		// Clear state
 		m.cache.ClearUserState(ctx, token, sender.ID)
 		m.cache.ClearTempData(ctx, token, sender.ID, "trigger")
 
-		return true, c.Reply(fmt.Sprintf("✅ <b>Auto-reply added!</b>\n\n🔑 Keyword: <code>%s</code>\n💬 Response: %s", trigger, text), telebot.ModeHTML)
+		// Build confirmation message
+		var confirmMsg string
+		if msgType == models.MessageTypeText {
+			confirmMsg = fmt.Sprintf("✅ <b>Auto-reply added!</b>\n\n🔑 Keyword: <code>%s</code>\n💬 Response: %s", trigger, responseText)
+		} else {
+			confirmMsg = fmt.Sprintf("✅ <b>Auto-reply added!</b>\n\n🔑 Keyword: <code>%s</code>\n📎 Type: %s", trigger, msgType)
+			if caption != "" {
+				confirmMsg += fmt.Sprintf("\n📝 Caption: %s", caption)
+			}
+		}
+
+		return true, c.Reply(confirmMsg, telebot.ModeHTML)
 
 	case "add_custom_cmd_name":
 		if text == "" {
@@ -386,11 +501,64 @@ func (m *Manager) processAutoReplyState(ctx context.Context, c telebot.Context, 
 		btnCancel := menu.Data("❌ Cancel", "auto_replies_menu")
 		menu.Inline(menu.Row(btnCancel))
 
-		return true, c.Send(fmt.Sprintf("✅ Command: <code>/%s</code>\n\nNow send the response for this command.\n\n💡 Supports Markdown formatting", cmdName), menu, telebot.ModeHTML)
+		return true, c.Send(fmt.Sprintf(`✅ Command: <code>/%s</code>
+
+Now send the response for this command.
+
+You can send:
+• Text (supports Markdown)
+• Photo, Video, Audio, Voice
+• Document, GIF, Sticker
+• Video note (circle video)`, cmdName), menu, telebot.ModeHTML)
 
 	case "add_custom_cmd_response":
-		if text == "" {
-			return true, c.Reply("⚠️ Please send a text response.")
+		// Determine message type and extract content
+		msgType := models.MessageTypeText
+		responseText := text
+		fileID := ""
+		caption := ""
+
+		msg := c.Message()
+		if msg.Photo != nil {
+			msgType = models.MessageTypePhoto
+			fileID = msg.Photo.FileID
+			caption = msg.Caption
+			responseText = ""
+		} else if msg.Video != nil {
+			msgType = models.MessageTypeVideo
+			fileID = msg.Video.FileID
+			caption = msg.Caption
+			responseText = ""
+		} else if msg.Audio != nil {
+			msgType = models.MessageTypeAudio
+			fileID = msg.Audio.FileID
+			caption = msg.Caption
+			responseText = ""
+		} else if msg.Voice != nil {
+			msgType = models.MessageTypeVoice
+			fileID = msg.Voice.FileID
+			caption = msg.Caption
+			responseText = ""
+		} else if msg.Document != nil {
+			msgType = models.MessageTypeDocument
+			fileID = msg.Document.FileID
+			caption = msg.Caption
+			responseText = ""
+		} else if msg.Animation != nil {
+			msgType = models.MessageTypeAnimation
+			fileID = msg.Animation.FileID
+			caption = msg.Caption
+			responseText = ""
+		} else if msg.VideoNote != nil {
+			msgType = models.MessageTypeVideoNote
+			fileID = msg.VideoNote.FileID
+			responseText = ""
+		} else if msg.Sticker != nil {
+			msgType = models.MessageTypeSticker
+			fileID = msg.Sticker.FileID
+			responseText = ""
+		} else if responseText == "" {
+			return true, c.Reply("⚠️ Please send a text message or media (photo, video, audio, voice, document, animation, video note, or sticker).")
 		}
 
 		// Get command from temp storage
@@ -400,46 +568,70 @@ func (m *Manager) processAutoReplyState(ctx context.Context, c telebot.Context, 
 			return true, c.Reply("⚠️ Session expired. Please try again.")
 		}
 
-		// Save to DB
-		err := m.repo.CreateAutoReply(ctx, botID, cmdName, text, "command", "exact")
+		// Save to DB with media fields
+		err := m.repo.CreateAutoReply(ctx, botID, cmdName, responseText, msgType, fileID, caption, "command", "exact")
 		if err != nil {
 			log.Printf("Error creating custom command: %v", err)
 			return true, c.Reply("❌ Error saving.")
 		}
 
-		// Cache for fast lookup
-		m.cache.SetAutoReply(ctx, token, cmdName, text, "command")
+		// Cache with media info
+		cacheData := &cache.AutoReplyCache{
+			Response:    responseText,
+			MessageType: msgType,
+			FileID:      fileID,
+			Caption:     caption,
+		}
+		m.cache.SetAutoReplyWithMedia(ctx, token, cmdName, cacheData, "command")
 
 		// Clear state
 		m.cache.ClearUserState(ctx, token, sender.ID)
 		m.cache.ClearTempData(ctx, token, sender.ID, "command")
 
-		return true, c.Reply(fmt.Sprintf("✅ <b>Custom command added!</b>\n\n🔑 Command: <code>/%s</code>\n💬 Response: %s", cmdName, text), telebot.ModeHTML)
+		// Build confirmation message
+		var confirmMsg string
+		if msgType == models.MessageTypeText {
+			confirmMsg = fmt.Sprintf("✅ <b>Custom command added!</b>\n\n🔑 Command: <code>/%s</code>\n💬 Response: %s", cmdName, responseText)
+		} else {
+			confirmMsg = fmt.Sprintf("✅ <b>Custom command added!</b>\n\n🔑 Command: <code>/%s</code>\n📎 Type: %s", cmdName, msgType)
+			if caption != "" {
+				confirmMsg += fmt.Sprintf("\n📝 Caption: %s", caption)
+			}
+		}
+
+		return true, c.Reply(confirmMsg, telebot.ModeHTML)
 	}
 
 	return false, nil
 }
 
 // checkAutoReply checks if a message matches any auto-reply triggers (exact match only)
-func (m *Manager) checkAutoReply(ctx context.Context, token string, botID int64, text string) string {
+// Returns the full AutoReply model or nil if not found
+func (m *Manager) checkAutoReply(ctx context.Context, token string, botID int64, text string) *models.AutoReply {
 	text = strings.ToLower(strings.TrimSpace(text))
 
 	// Try cache first - get all keywords for this bot
-	replies, err := m.cache.GetAllAutoReplies(ctx, token, "keyword")
+	replies, err := m.cache.GetAllAutoRepliesWithMedia(ctx, token, "keyword")
 	if err == nil && len(replies) > 0 {
-		for trigger, response := range replies {
+		for trigger, cacheData := range replies {
 			if text == strings.ToLower(trigger) {
-				return response
+				return &models.AutoReply{
+					TriggerWord: trigger,
+					Response:    cacheData.Response,
+					MessageType: cacheData.MessageType,
+					FileID:      cacheData.FileID,
+					Caption:     cacheData.Caption,
+				}
 			}
 		}
-		return ""
+		return nil
 	}
 
 	// Fallback to DB
 	dbReplies, err := m.repo.GetAutoReplies(ctx, botID, "keyword")
 	if err != nil {
 		log.Printf("Error getting auto-replies from DB: %v", err)
-		return ""
+		return nil
 	}
 
 	for _, r := range dbReplies {
@@ -448,43 +640,136 @@ func (m *Manager) checkAutoReply(ctx context.Context, token string, botID int64,
 			// Only exact match
 			if text == trigger {
 				// Cache for next time
-				m.cache.SetAutoReply(ctx, token, r.TriggerWord, r.Response, "keyword")
-				return r.Response
+				cacheData := &cache.AutoReplyCache{
+					Response:    r.Response,
+					MessageType: r.MessageType,
+					FileID:      r.FileID,
+					Caption:     r.Caption,
+				}
+				m.cache.SetAutoReplyWithMedia(ctx, token, r.TriggerWord, cacheData, "keyword")
+				return &r
 			}
 		}
 	}
 
-	return ""
+	return nil
 }
 
 // checkCustomCommand checks if a message is a custom command
-func (m *Manager) checkCustomCommand(ctx context.Context, token string, botID int64, text string) string {
+// Returns the full AutoReply model or nil if not found
+func (m *Manager) checkCustomCommand(ctx context.Context, token string, botID int64, text string) *models.AutoReply {
 	// Only check if it starts with /
 	if !strings.HasPrefix(text, "/") {
-		return ""
+		return nil
 	}
 
 	// Extract command name
 	cmdText := strings.TrimPrefix(text, "/")
 	cmdParts := strings.Fields(cmdText)
 	if len(cmdParts) == 0 {
-		return ""
+		return nil
 	}
 	cmdName := strings.ToLower(cmdParts[0])
 
 	// Try cache first
-	response, err := m.cache.GetAutoReply(ctx, token, cmdName, "command")
-	if err == nil && response != "" {
-		return response
+	cacheData, err := m.cache.GetAutoReplyWithMedia(ctx, token, cmdName, "command")
+	if err == nil && cacheData != nil {
+		return &models.AutoReply{
+			TriggerWord: cmdName,
+			Response:    cacheData.Response,
+			MessageType: cacheData.MessageType,
+			FileID:      cacheData.FileID,
+			Caption:     cacheData.Caption,
+		}
 	}
 
 	// Fallback to DB
 	reply, err := m.repo.GetAutoReplyByTrigger(ctx, botID, cmdName, "command")
 	if err != nil || reply == nil || !reply.IsActive {
-		return ""
+		return nil
 	}
 
 	// Cache for next time
-	m.cache.SetAutoReply(ctx, token, cmdName, reply.Response, "command")
-	return reply.Response
+	cacheData = &cache.AutoReplyCache{
+		Response:    reply.Response,
+		MessageType: reply.MessageType,
+		FileID:      reply.FileID,
+		Caption:     reply.Caption,
+	}
+	m.cache.SetAutoReplyWithMedia(ctx, token, cmdName, cacheData, "command")
+	return reply
+}
+
+// sendAutoReply sends an auto-reply based on message type
+func (m *Manager) sendAutoReply(c telebot.Context, reply *models.AutoReply) error {
+	switch reply.MessageType {
+	case models.MessageTypeText, "": // Empty string for backward compatibility
+		return c.Send(reply.Response, telebot.ModeMarkdown)
+
+	case models.MessageTypePhoto:
+		photo := &telebot.Photo{
+			File:    telebot.File{FileID: reply.FileID},
+			Caption: reply.Caption,
+		}
+		_, err := c.Bot().Send(c.Recipient(), photo, telebot.ModeMarkdown)
+		return err
+
+	case models.MessageTypeVideo:
+		video := &telebot.Video{
+			File:    telebot.File{FileID: reply.FileID},
+			Caption: reply.Caption,
+		}
+		_, err := c.Bot().Send(c.Recipient(), video, telebot.ModeMarkdown)
+		return err
+
+	case models.MessageTypeAudio:
+		audio := &telebot.Audio{
+			File:    telebot.File{FileID: reply.FileID},
+			Caption: reply.Caption,
+		}
+		_, err := c.Bot().Send(c.Recipient(), audio, telebot.ModeMarkdown)
+		return err
+
+	case models.MessageTypeVoice:
+		voice := &telebot.Voice{
+			File:    telebot.File{FileID: reply.FileID},
+			Caption: reply.Caption,
+		}
+		_, err := c.Bot().Send(c.Recipient(), voice, telebot.ModeMarkdown)
+		return err
+
+	case models.MessageTypeDocument:
+		doc := &telebot.Document{
+			File:    telebot.File{FileID: reply.FileID},
+			Caption: reply.Caption,
+		}
+		_, err := c.Bot().Send(c.Recipient(), doc, telebot.ModeMarkdown)
+		return err
+
+	case models.MessageTypeAnimation:
+		anim := &telebot.Animation{
+			File:    telebot.File{FileID: reply.FileID},
+			Caption: reply.Caption,
+		}
+		_, err := c.Bot().Send(c.Recipient(), anim, telebot.ModeMarkdown)
+		return err
+
+	case models.MessageTypeVideoNote:
+		vn := &telebot.VideoNote{
+			File: telebot.File{FileID: reply.FileID},
+		}
+		_, err := c.Bot().Send(c.Recipient(), vn)
+		return err
+
+	case models.MessageTypeSticker:
+		sticker := &telebot.Sticker{
+			File: telebot.File{FileID: reply.FileID},
+		}
+		_, err := c.Bot().Send(c.Recipient(), sticker)
+		return err
+
+	default:
+		log.Printf("Unknown message type: %s", reply.MessageType)
+		return c.Send(reply.Response, telebot.ModeMarkdown)
+	}
 }

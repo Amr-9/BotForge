@@ -193,14 +193,14 @@ func (m *Manager) handleUserMessage(ctx context.Context, c telebot.Context, bot 
 	// Check custom commands and auto-replies
 	autoReplied := false
 	if text != "" {
-		if response := m.checkCustomCommand(ctx, token, botID, text); response != "" {
-			c.Send(response, telebot.ModeMarkdown)
+		if reply := m.checkCustomCommand(ctx, token, botID, text); reply != nil {
+			m.sendAutoReply(c, reply)
 			autoReplied = true
 		}
 
 		// Check auto-reply keywords (exact match only)
-		if response := m.checkAutoReply(ctx, token, botID, text); response != "" {
-			c.Send(response, telebot.ModeMarkdown)
+		if reply := m.checkAutoReply(ctx, token, botID, text); reply != nil {
+			m.sendAutoReply(c, reply)
 			autoReplied = true
 		}
 	}

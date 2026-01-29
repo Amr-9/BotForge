@@ -51,7 +51,10 @@ type AutoReply struct {
 	ID          int64     `db:"id"`
 	BotID       int64     `db:"bot_id"`
 	TriggerWord string    `db:"trigger_word"` // Keyword or command name (without /)
-	Response    string    `db:"response"`     // Response text (supports Markdown)
+	Response    string    `db:"response"`     // Response text (supports Markdown) - used for text type
+	MessageType string    `db:"message_type"` // "text", "photo", "video", "audio", "voice", "document", "animation", "video_note", "sticker"
+	FileID      string    `db:"file_id"`      // Telegram FileID for media
+	Caption     string    `db:"caption"`      // Caption for media (supports Markdown)
 	TriggerType string    `db:"trigger_type"` // "keyword" or "command"
 	MatchType   string    `db:"match_type"`   // "exact" or "contains" (for keywords)
 	IsActive    bool      `db:"is_active"`
@@ -88,10 +91,15 @@ const (
 
 // Message type constants
 const (
-	MessageTypeText     = "text"
-	MessageTypePhoto    = "photo"
-	MessageTypeVideo    = "video"
-	MessageTypeDocument = "document"
+	MessageTypeText      = "text"
+	MessageTypePhoto     = "photo"
+	MessageTypeVideo     = "video"
+	MessageTypeDocument  = "document"
+	MessageTypeAudio     = "audio"
+	MessageTypeVoice     = "voice"
+	MessageTypeAnimation = "animation"
+	MessageTypeVideoNote = "video_note"
+	MessageTypeSticker   = "sticker"
 )
 
 // Schedule status constants

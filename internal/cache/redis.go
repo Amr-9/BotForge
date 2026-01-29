@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strconv"
@@ -9,6 +10,14 @@ import (
 
 	"github.com/redis/go-redis/v9"
 )
+
+// AutoReplyCache represents cached auto-reply data with media support
+type AutoReplyCache struct {
+	Response    string `json:"response"`
+	MessageType string `json:"message_type"`
+	FileID      string `json:"file_id"`
+	Caption     string `json:"caption"`
+}
 
 // Redis wraps the redis client with message caching operations
 type Redis struct {
@@ -309,6 +318,77 @@ func (r *Redis) GetAllAutoReplies(ctx context.Context, botToken, triggerType str
 			// Extract trigger from key
 			trigger := key[len(prefix):]
 			result[trigger] = val
+		}
+	}
+
+	return result, nil
+}
+
+// SetAutoReplyWithMedia caches an auto-reply with media support
+func (r *Redis) SetAutoReplyWithMedia(ctx context.Context, botToken, trigger string, cache *AutoReplyCache, triggerType string) error {
+	key := fmt.Sprintf("autoreply:%s:%s:%s", botToken, triggerType, trigger)
+
+	data, err := json.Marshal(cache)
+	if err != nil {
+		return fmt.Errorf("failed to marshal auto-reply cache: %w", err)
+	}
+
+	return r.client.Set(ctx, key, data, 24*time.Hour).Err()
+}
+
+// GetAutoReplyWithMedia retrieves a cached auto-reply with media info
+func (r *Redis) GetAutoReplyWithMedia(ctx context.Context, botToken, trigger, triggerType string) (*AutoReplyCache, error) {
+	key := fmt.Sprintf("autoreply:%s:%s:%s", botToken, triggerType, trigger)
+
+	val, err := r.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var cache AutoReplyCache
+	if err := json.Unmarshal([]byte(val), &cache); err != nil {
+		// Backward compatibility: try to parse as plain string (old format)
+		return &AutoReplyCache{
+			Response:    val,
+			MessageType: "text",
+		}, nil
+	}
+
+	return &cache, nil
+}
+
+// GetAllAutoRepliesWithMedia loads all auto-replies with media info
+func (r *Redis) GetAllAutoRepliesWithMedia(ctx context.Context, botToken, triggerType string) (map[string]*AutoReplyCache, error) {
+	pattern := fmt.Sprintf("autoreply:%s:%s:*", botToken, triggerType)
+	keys, err := r.client.Keys(ctx, pattern).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(keys) == 0 {
+		return nil, nil
+	}
+
+	result := make(map[string]*AutoReplyCache)
+	prefix := fmt.Sprintf("autoreply:%s:%s:", botToken, triggerType)
+
+	for _, key := range keys {
+		val, err := r.client.Get(ctx, key).Result()
+		if err == nil {
+			trigger := key[len(prefix):]
+
+			var cache AutoReplyCache
+			if err := json.Unmarshal([]byte(val), &cache); err != nil {
+				// Backward compatibility: old format was plain string
+				cache = AutoReplyCache{
+					Response:    val,
+					MessageType: "text",
+				}
+			}
+			result[trigger] = &cache
 		}
 	}
 
