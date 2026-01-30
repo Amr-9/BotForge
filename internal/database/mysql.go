@@ -208,6 +208,11 @@ func (m *MySQL) migrate() error {
 		log.Printf("Warning: %v", err)
 	}
 
+	// Add username column to bots table
+	if err := m.addColumnIfNotExists("bots", "username", "VARCHAR(255) DEFAULT NULL"); err != nil {
+		log.Printf("Warning: %v", err)
+	}
+
 	return nil
 }
 

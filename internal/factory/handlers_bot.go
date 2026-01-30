@@ -118,7 +118,9 @@ func (f *Factory) handleBotDetails(c telebot.Context, tokenPrefix string) error 
 	}
 
 	var targetBot *struct {
+		id          int64
 		token       string
+		username    string
 		ownerChatID int64
 		createdAt   time.Time
 	}
@@ -126,10 +128,12 @@ func (f *Factory) handleBotDetails(c telebot.Context, tokenPrefix string) error 
 	for _, bot := range bots {
 		if strings.HasPrefix(bot.Token, tokenPrefix) {
 			targetBot = &struct {
+				id          int64
 				token       string
+				username    string
 				ownerChatID int64
 				createdAt   time.Time
-			}{token: bot.Token, ownerChatID: bot.OwnerChatID, createdAt: bot.CreatedAt}
+			}{id: bot.ID, token: bot.Token, username: bot.Username, ownerChatID: bot.OwnerChatID, createdAt: bot.CreatedAt}
 			break
 		}
 	}
@@ -144,8 +148,18 @@ func (f *Factory) handleBotDetails(c telebot.Context, tokenPrefix string) error 
 		status = "🟢 Running"
 	}
 
-	// Get bot username
-	username := getBotUsername(targetBot.token)
+	// Get bot username - use stored value or fetch from API
+	username := targetBot.username
+	if username == "" {
+		// No stored username, fetch from Telegram API
+		username = getBotUsername(targetBot.token)
+		if username != "" && username != "Unknown" {
+			// Save to database for future use
+			if err := f.repo.UpdateBotUsername(ctx, targetBot.id, username); err != nil {
+				log.Printf("Failed to save bot username to DB: %v", err)
+			}
+		}
+	}
 
 	// Format created date
 	createdAt := targetBot.createdAt.Format("2006-01-02 3:04 PM")
@@ -483,7 +497,7 @@ func (f *Factory) processToken(c telebot.Context, token string) error {
 	var botID int64
 	if deletedBot != nil {
 		// Restore the deleted bot
-		if err := f.repo.RestoreBot(ctx, token, senderID); err != nil {
+		if err := f.repo.RestoreBot(ctx, token, senderID, botInfo.Username); err != nil {
 			log.Printf("Failed to restore bot: %v", err)
 			return c.Reply("❌ Failed to restore bot. Please try again.", f.getBackButton())
 		}
@@ -491,7 +505,7 @@ func (f *Factory) processToken(c telebot.Context, token string) error {
 		log.Printf("Bot restored: %s (ID: %d)", botInfo.Username, botID)
 	} else {
 		// Create new bot
-		savedBot, err := f.repo.CreateBot(ctx, token, senderID)
+		savedBot, err := f.repo.CreateBot(ctx, token, senderID, botInfo.Username)
 		if err != nil {
 			log.Printf("Failed to save bot: %v", err)
 			return c.Reply("❌ Failed to save bot. Please try again.", f.getBackButton())
