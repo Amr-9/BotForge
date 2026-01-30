@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"gopkg.in/telebot.v3"
 )
@@ -210,21 +211,64 @@ func (m *Manager) handleChildStats(bot *telebot.Bot, token string, ownerChat *te
 		botID := m.botIDs[token]
 		m.mu.RUnlock()
 
-		count, err := m.repo.GetUniqueUserCount(ctx, botID)
-		if err != nil {
-			return c.Edit("❌ Failed to retrieve stats.")
-		}
+		// Get user statistics
+		totalUsers, _ := m.repo.GetUniqueUserCount(ctx, botID)
+		activeUsers7d, _ := m.repo.GetActiveUserCount(ctx, botID, timeNow().AddDate(0, 0, -7))
+		activeUsers24h, _ := m.repo.GetActiveUserCount(ctx, botID, timeNow().AddDate(0, 0, -1))
+		newUsersToday, _ := m.repo.GetNewUserCount(ctx, botID, todayStart())
+		bannedCount, _ := m.repo.GetBannedUserCount(ctx, botID)
 
-		msg := fmt.Sprintf("📊 <b>Bot Statistics</b>\n\n👥 <b>Unique Users:</b> %d", count)
+		// Get message statistics
+		totalMessages, _ := m.repo.GetTotalMessageCount(ctx, botID)
+		messagesToday, _ := m.repo.GetMessageCountSince(ctx, botID, todayStart())
+		messagesWeek, _ := m.repo.GetMessageCountSince(ctx, botID, timeNow().AddDate(0, 0, -7))
+
+		// Get configuration counts
+		keywordCount, _ := m.repo.GetAutoReplyCount(ctx, botID, "keyword")
+		commandCount, _ := m.repo.GetAutoReplyCount(ctx, botID, "command")
+		forcedChannelCount, _ := m.repo.GetForcedChannelCount(ctx, botID)
+
+		msg := fmt.Sprintf(`📊 <b>Bot Statistics</b>
+
+<b>👥 Users</b>
+├ Total: <code>%d</code>
+├ Active (24h): <code>%d</code>
+├ Active (7d): <code>%d</code>
+├ New today: <code>%d</code>
+└ Banned: <code>%d</code>
+
+<b>📨 Messages</b>
+├ Total: <code>%d</code>
+├ Today: <code>%d</code>
+└ This week: <code>%d</code>
+
+<b>⚙️ Configuration</b>
+├ Auto-replies: <code>%d</code>
+├ Commands: <code>%d</code>
+└ Forced channels: <code>%d</code>`,
+			totalUsers, activeUsers24h, activeUsers7d, newUsersToday, bannedCount,
+			totalMessages, messagesToday, messagesWeek,
+			keywordCount, commandCount, forcedChannelCount)
 
 		menu := &telebot.ReplyMarkup{}
+		btnRefresh := menu.Data("🔄 Refresh", "child_stats")
 		btnBack := menu.Data("« Back to Menu", "child_main_menu")
 		menu.Inline(
+			menu.Row(btnRefresh),
 			menu.Row(btnBack),
 		)
 
 		return c.Edit(msg, menu, telebot.ModeHTML)
 	}
+}
+
+// timeNow returns the current time (can be mocked in tests)
+var timeNow = time.Now
+
+// todayStart returns the start of today (midnight)
+func todayStart() time.Time {
+	now := timeNow()
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 }
 
 // handleToggleSentConfirmation toggles the "Message sent successfully" notification

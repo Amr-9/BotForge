@@ -158,3 +158,66 @@ func (r *Repository) GetBannedUserCount(ctx context.Context, botID int64) (int64
 	}
 	return count, nil
 }
+
+// ==================== Statistics Functions ====================
+
+// GetTotalMessageCount returns the total number of messages for a bot
+func (r *Repository) GetTotalMessageCount(ctx context.Context, botID int64) (int64, error) {
+	var count int64
+	query := `SELECT COUNT(*) FROM message_logs WHERE bot_id = ?`
+	err := r.mysql.db.GetContext(ctx, &count, query, botID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get total message count: %w", err)
+	}
+	return count, nil
+}
+
+// GetMessageCountSince returns the number of messages since a given time
+func (r *Repository) GetMessageCountSince(ctx context.Context, botID int64, since time.Time) (int64, error) {
+	var count int64
+	query := `SELECT COUNT(*) FROM message_logs WHERE bot_id = ? AND created_at >= ?`
+	err := r.mysql.db.GetContext(ctx, &count, query, botID, since)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get message count since: %w", err)
+	}
+	return count, nil
+}
+
+// GetActiveUserCount returns the number of unique users active since a given time
+func (r *Repository) GetActiveUserCount(ctx context.Context, botID int64, since time.Time) (int64, error) {
+	var count int64
+	query := `SELECT COUNT(DISTINCT user_chat_id) FROM message_logs WHERE bot_id = ? AND created_at >= ?`
+	err := r.mysql.db.GetContext(ctx, &count, query, botID, since)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get active user count: %w", err)
+	}
+	return count, nil
+}
+
+// GetNewUserCount returns the number of new users (first message) since a given time
+func (r *Repository) GetNewUserCount(ctx context.Context, botID int64, since time.Time) (int64, error) {
+	var count int64
+	query := `SELECT COUNT(DISTINCT user_chat_id) FROM message_logs
+			  WHERE bot_id = ?
+			  AND user_chat_id NOT IN (
+				  SELECT DISTINCT user_chat_id FROM message_logs
+				  WHERE bot_id = ? AND created_at < ?
+			  )
+			  AND created_at >= ?`
+	err := r.mysql.db.GetContext(ctx, &count, query, botID, botID, since, since)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get new user count: %w", err)
+	}
+	return count, nil
+}
+
+// GetBotCreatedAt returns the creation date of a bot (first message received)
+func (r *Repository) GetBotFirstActivity(ctx context.Context, botID int64) (time.Time, error) {
+	var createdAt time.Time
+	query := `SELECT MIN(created_at) FROM message_logs WHERE bot_id = ?`
+	err := r.mysql.db.GetContext(ctx, &createdAt, query, botID)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to get bot first activity: %w", err)
+	}
+	return createdAt, nil
+}
