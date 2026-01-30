@@ -89,9 +89,20 @@ Use "Add Bot" to add your first bot!`
 			status = "🟢"
 		}
 
-		// Show first 10 chars of token
-		shortToken := bot.Token[:10] + "..."
-		btnText := fmt.Sprintf("%s %s", status, shortToken)
+		// Get bot username - use stored value or fetch from API
+		username := bot.Username
+		if username == "" {
+			// No stored username, fetch from Telegram API
+			username = getBotUsername(bot.Token)
+			if username != "" && username != "Unknown" {
+				// Save to database for future use
+				if err := f.repo.UpdateBotUsername(ctx, bot.ID, username); err != nil {
+					log.Printf("Failed to save bot username to DB: %v", err)
+				}
+			}
+		}
+
+		btnText := fmt.Sprintf("%s @%s", status, username)
 
 		btn := menu.Data(btnText, CallbackBotSelect, bot.Token[:20])
 		rows = append(rows, menu.Row(btn))
