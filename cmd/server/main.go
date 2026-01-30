@@ -15,6 +15,7 @@ import (
 	"github.com/Amr-9/botforge/internal/config"
 	"github.com/Amr-9/botforge/internal/database"
 	"github.com/Amr-9/botforge/internal/factory"
+	"github.com/Amr-9/botforge/internal/recovery"
 	"github.com/Amr-9/botforge/internal/scheduler"
 	"gopkg.in/telebot.v3"
 )
@@ -104,8 +105,11 @@ func main() {
 
 	// For Main.go, we setup the HTTP server.
 
-	// HTTP Server Routing
-	http.Handle("/webhook/", manager)
+	// Create shared panic recovery handler
+	panicHandler := recovery.DefaultHandler
+
+	// HTTP Server Routing with panic recovery middleware
+	http.Handle("/webhook/", recovery.HTTPMiddleware(manager, panicHandler))
 
 	// Start HTTP Server
 	server := &http.Server{
@@ -113,12 +117,24 @@ func main() {
 		Handler: nil, // DefaultServeMux
 	}
 
-	go func() {
-		log.Printf("Server listening on port %s...", cfg.ServerPort)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("HTTP server error: %v", err)
-		}
-	}()
+	// Start HTTP server with panic recovery
+	// Use SafeGoWithRestartAndReset - only restart on panic, not on normal return
+	recovery.SafeGoWithRestartAndReset(
+		func() {
+			log.Printf("Server listening on port %s...", cfg.ServerPort)
+			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				// Panic on critical HTTP error to trigger restart
+				panic(fmt.Errorf("HTTP server critical error: %v", err))
+			}
+		},
+		map[string]string{"type": "http_server"},
+		panicHandler,
+		recovery.NewRestartPolicy(5, 1*time.Second, 30*time.Second),
+		30*time.Second, // Reset retry counter if server runs for 30s successfully
+		func() {
+			log.Fatalf("[CRITICAL] HTTP server exhausted restart retries")
+		},
+	)
 
 	// Load and start all active bots (Set Webhook for them)
 	ctx := context.Background()

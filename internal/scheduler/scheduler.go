@@ -9,32 +9,50 @@ import (
 	"github.com/Amr-9/botforge/internal/bot"
 	"github.com/Amr-9/botforge/internal/database"
 	"github.com/Amr-9/botforge/internal/models"
+	"github.com/Amr-9/botforge/internal/recovery"
 	"gopkg.in/telebot.v3"
 )
 
 // Scheduler handles scheduled message processing
 type Scheduler struct {
-	repo     *database.Repository
-	manager  *bot.Manager
-	ticker   *time.Ticker
-	stopCh   chan struct{}
-	interval time.Duration
+	repo            *database.Repository
+	manager         *bot.Manager
+	ticker          *time.Ticker
+	stopCh          chan struct{}
+	interval        time.Duration
+	recoveryHandler recovery.Handler
+	restartPolicy   *recovery.RestartPolicy
 }
 
-// NewScheduler creates a new scheduler instance
+// NewScheduler creates a new scheduler instance with default recovery handler
 func NewScheduler(repo *database.Repository, manager *bot.Manager, interval time.Duration) *Scheduler {
+	return NewSchedulerWithRecovery(repo, manager, interval, recovery.DefaultHandler)
+}
+
+// NewSchedulerWithRecovery creates a new scheduler instance with custom recovery handler
+func NewSchedulerWithRecovery(repo *database.Repository, manager *bot.Manager, interval time.Duration, handler recovery.Handler) *Scheduler {
 	return &Scheduler{
-		repo:     repo,
-		manager:  manager,
-		interval: interval,
-		stopCh:   make(chan struct{}),
+		repo:            repo,
+		manager:         manager,
+		interval:        interval,
+		stopCh:          make(chan struct{}),
+		recoveryHandler: handler,
+		restartPolicy:   recovery.NewRestartPolicy(5, 10*time.Second, 2*time.Minute),
 	}
 }
 
-// Start begins the scheduler loop
+// Start begins the scheduler loop with panic recovery
 func (s *Scheduler) Start() {
 	s.ticker = time.NewTicker(s.interval)
-	go s.run()
+	recovery.SafeGoWithRestart(
+		s.run,
+		map[string]string{"type": "scheduler_main_loop"},
+		s.recoveryHandler,
+		s.restartPolicy,
+		func() {
+			log.Printf("[CRITICAL] Scheduler exhausted restart retries")
+		},
+	)
 	log.Printf("[Scheduler] Started with interval: %v", s.interval)
 }
 
@@ -80,7 +98,16 @@ func (s *Scheduler) processPendingMessages() {
 	log.Printf("[Scheduler] Processing %d pending messages", len(messages))
 
 	for _, msg := range messages {
-		go s.processMessage(ctx, msg)
+		msgCopy := msg // Capture for closure
+		recovery.SafeGo(
+			func() { s.processMessage(ctx, msgCopy) },
+			map[string]string{
+				"type":   "process_scheduled_message",
+				"msg_id": fmt.Sprintf("%d", msgCopy.ID),
+				"bot_id": fmt.Sprintf("%d", msgCopy.BotID),
+			},
+			s.recoveryHandler,
+		)
 	}
 }
 

@@ -7,30 +7,43 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Amr-9/botforge/internal/cache"
 	"github.com/Amr-9/botforge/internal/database"
+	"github.com/Amr-9/botforge/internal/recovery"
 	"gopkg.in/telebot.v3"
 )
 
 // Manager handles the lifecycle of all child bots
 type Manager struct {
-	repo       *database.Repository
-	cache      *cache.Redis
-	bots       map[string]*telebot.Bot // token -> bot instance
-	botIDs     map[string]int64        // token -> bot ID
-	webhookURL string
-	mu         sync.RWMutex
+	repo               *database.Repository
+	cache              *cache.Redis
+	bots               map[string]*telebot.Bot // token -> bot instance
+	botIDs             map[string]int64        // token -> bot ID
+	webhookURL         string
+	mu                 sync.RWMutex
+	recoveryHandler    recovery.Handler
+	restartPolicies    map[string]*recovery.RestartPolicy     // token -> restart policy
+	restartControllers map[string]*recovery.RestartController // token -> restart controller
 }
 
-// NewManager creates a new bot manager
+// NewManager creates a new bot manager with default recovery handler
 func NewManager(repo *database.Repository, cache *cache.Redis, webhookURL string) *Manager {
+	return NewManagerWithRecovery(repo, cache, webhookURL, recovery.DefaultHandler)
+}
+
+// NewManagerWithRecovery creates a new bot manager with custom recovery handler
+func NewManagerWithRecovery(repo *database.Repository, cache *cache.Redis, webhookURL string, handler recovery.Handler) *Manager {
 	return &Manager{
-		repo:       repo,
-		cache:      cache,
-		bots:       make(map[string]*telebot.Bot),
-		botIDs:     make(map[string]int64),
-		webhookURL: webhookURL,
+		repo:               repo,
+		cache:              cache,
+		bots:               make(map[string]*telebot.Bot),
+		botIDs:             make(map[string]int64),
+		webhookURL:         webhookURL,
+		recoveryHandler:    handler,
+		restartPolicies:    make(map[string]*recovery.RestartPolicy),
+		restartControllers: make(map[string]*recovery.RestartController),
 	}
 }
 
@@ -52,10 +65,29 @@ func (m *Manager) RegisterExistingBot(token string, bot *telebot.Bot) {
 	// For existing bots (Factory), we might not have ID or don't track it in message logs mostly
 	m.botIDs[token] = 0
 
-	// Start the bot dispatcher in the background
-	go bot.Start()
+	// Create restart policy and controller for factory bot
+	policy := recovery.NewRestartPolicy(3, 5*time.Second, 1*time.Minute)
+	m.restartPolicies[token] = policy
+	controller := recovery.NewRestartController()
+	m.restartControllers[token] = controller
 
-	log.Printf("Registered existing bot: %s...", token[:10])
+	// Start the bot dispatcher in the background with panic recovery and cancellation support
+	tokenPrefix := token[:10]
+	recovery.SafeGoWithRestartAndController(
+		func() { bot.Start() },
+		map[string]string{
+			"type":  "factory_bot",
+			"token": tokenPrefix + "...",
+		},
+		m.recoveryHandler,
+		policy,
+		controller,
+		func() {
+			log.Printf("[CRITICAL] Factory bot %s... exhausted restart retries", tokenPrefix)
+		},
+	)
+
+	log.Printf("Registered existing bot: %s...", tokenPrefix)
 }
 
 // ServeHTTP handles incoming webhook requests
@@ -89,8 +121,18 @@ func (m *Manager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Process update
-	bot.ProcessUpdate(update)
+	// Process update with panic recovery
+	tokenPrefix := token
+	if len(token) > 10 {
+		tokenPrefix = token[:10] + "..."
+	}
+	func() {
+		defer recovery.Recover(m.recoveryHandler, map[string]string{
+			"type":  "process_update",
+			"token": tokenPrefix,
+		})
+		bot.ProcessUpdate(update)
+	}()
 }
 
 // StartBot registers the bot with Telegram Webhook and adds it to the manager
@@ -134,10 +176,30 @@ func (m *Manager) StartBot(token string, ownerChatID int64, botID int64) error {
 	m.bots[token] = bot
 	m.botIDs[token] = botID
 
-	// Start the bot dispatcher in the background
-	go bot.Start()
+	// Create restart policy and controller for child bot
+	policy := recovery.NewRestartPolicy(3, 5*time.Second, 1*time.Minute)
+	m.restartPolicies[token] = policy
+	controller := recovery.NewRestartController()
+	m.restartControllers[token] = controller
 
-	log.Printf("Started webhook for bot: %s... (ID: %d)", token[:10], botID)
+	// Start the bot dispatcher in the background with panic recovery and cancellation support
+	tokenPrefix := token[:10]
+	recovery.SafeGoWithRestartAndController(
+		func() { bot.Start() },
+		map[string]string{
+			"type":  "child_bot",
+			"token": tokenPrefix + "...",
+			"botID": fmt.Sprintf("%d", botID),
+		},
+		m.recoveryHandler,
+		policy,
+		controller,
+		func() {
+			log.Printf("[CRITICAL] Child bot %s... (ID: %d) exhausted restart retries", tokenPrefix, botID)
+		},
+	)
+
+	log.Printf("Started webhook for bot: %s... (ID: %d)", tokenPrefix, botID)
 
 	return nil
 }
@@ -148,13 +210,28 @@ func (m *Manager) StopBot(token string) {
 	defer m.mu.Unlock()
 
 	if bot, exists := m.bots[token]; exists {
-		go func(b *telebot.Bot) {
-			b.RemoveWebhook()
-		}(bot)
+		tokenPrefix := token[:10]
+
+		// Stop the restart controller first to cancel the goroutine
+		if controller, ctrlExists := m.restartControllers[token]; ctrlExists {
+			controller.Stop()
+			delete(m.restartControllers, token)
+		}
+
+		botCopy := bot
+		recovery.SafeGo(
+			func() { botCopy.RemoveWebhook() },
+			map[string]string{
+				"type":  "webhook_cleanup",
+				"token": tokenPrefix + "...",
+			},
+			m.recoveryHandler,
+		)
 
 		delete(m.bots, token)
 		delete(m.botIDs, token)
-		log.Printf("Stopped bot: %s...", token[:10])
+		delete(m.restartPolicies, token)
+		log.Printf("Stopped bot: %s...", tokenPrefix)
 	}
 }
 
@@ -164,9 +241,26 @@ func (m *Manager) StopAll() {
 	defer m.mu.Unlock()
 
 	for token, bot := range m.bots {
-		go bot.RemoveWebhook()
+		tokenPrefix := token[:10]
+
+		// Stop the restart controller first
+		if controller, ctrlExists := m.restartControllers[token]; ctrlExists {
+			controller.Stop()
+			delete(m.restartControllers, token)
+		}
+
+		botCopy := bot
+		recovery.SafeGo(
+			func() { botCopy.RemoveWebhook() },
+			map[string]string{
+				"type":  "webhook_cleanup_all",
+				"token": tokenPrefix + "...",
+			},
+			m.recoveryHandler,
+		)
 		delete(m.bots, token)
 		delete(m.botIDs, token)
+		delete(m.restartPolicies, token)
 	}
 }
 
