@@ -221,3 +221,109 @@ func (r *Repository) GetBotFirstActivity(ctx context.Context, botID int64) (time
 	}
 	return createdAt, nil
 }
+
+// ==================== Global Statistics Functions (All Bots) ====================
+
+// GetGlobalUniqueUserCount returns the total unique users across all bots
+func (r *Repository) GetGlobalUniqueUserCount(ctx context.Context) (int64, error) {
+	var count int64
+	query := `SELECT COUNT(DISTINCT user_chat_id) FROM message_logs`
+	err := r.mysql.db.GetContext(ctx, &count, query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get global unique user count: %w", err)
+	}
+	return count, nil
+}
+
+// GetGlobalActiveUserCount returns the total active users across all bots since a given time
+func (r *Repository) GetGlobalActiveUserCount(ctx context.Context, since time.Time) (int64, error) {
+	var count int64
+	query := `SELECT COUNT(DISTINCT user_chat_id) FROM message_logs WHERE created_at >= ?`
+	err := r.mysql.db.GetContext(ctx, &count, query, since)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get global active user count: %w", err)
+	}
+	return count, nil
+}
+
+// GetGlobalNewUserCount returns new users across all bots since a given time
+func (r *Repository) GetGlobalNewUserCount(ctx context.Context, since time.Time) (int64, error) {
+	var count int64
+	query := `SELECT COUNT(DISTINCT user_chat_id) FROM message_logs
+			  WHERE user_chat_id NOT IN (
+				  SELECT DISTINCT user_chat_id FROM message_logs
+				  WHERE created_at < ?
+			  )
+			  AND created_at >= ?`
+	err := r.mysql.db.GetContext(ctx, &count, query, since, since)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get global new user count: %w", err)
+	}
+	return count, nil
+}
+
+// GetGlobalTotalMessageCount returns the total messages across all bots
+func (r *Repository) GetGlobalTotalMessageCount(ctx context.Context) (int64, error) {
+	var count int64
+	query := `SELECT COUNT(*) FROM message_logs`
+	err := r.mysql.db.GetContext(ctx, &count, query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get global total message count: %w", err)
+	}
+	return count, nil
+}
+
+// GetGlobalMessageCountSince returns total messages across all bots since a given time
+func (r *Repository) GetGlobalMessageCountSince(ctx context.Context, since time.Time) (int64, error) {
+	var count int64
+	query := `SELECT COUNT(*) FROM message_logs WHERE created_at >= ?`
+	err := r.mysql.db.GetContext(ctx, &count, query, since)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get global message count since: %w", err)
+	}
+	return count, nil
+}
+
+// GetGlobalBannedUserCount returns total banned users across all bots
+func (r *Repository) GetGlobalBannedUserCount(ctx context.Context) (int64, error) {
+	var count int64
+	query := `SELECT COUNT(*) FROM banned_users`
+	err := r.mysql.db.GetContext(ctx, &count, query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get global banned user count: %w", err)
+	}
+	return count, nil
+}
+
+// GetGlobalAutoReplyCount returns total auto-replies across all bots
+func (r *Repository) GetGlobalAutoReplyCount(ctx context.Context) (int64, error) {
+	var count int64
+	query := `SELECT COUNT(*) FROM auto_replies WHERE is_active = TRUE`
+	err := r.mysql.db.GetContext(ctx, &count, query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get global auto-reply count: %w", err)
+	}
+	return count, nil
+}
+
+// GetGlobalForcedChannelCount returns total forced channels across all bots
+func (r *Repository) GetGlobalForcedChannelCount(ctx context.Context) (int64, error) {
+	var count int64
+	query := `SELECT COUNT(*) FROM forced_channels WHERE is_active = TRUE`
+	err := r.mysql.db.GetContext(ctx, &count, query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get global forced channel count: %w", err)
+	}
+	return count, nil
+}
+
+// GetUniqueOwnerCount returns the number of unique bot owners
+func (r *Repository) GetUniqueOwnerCount(ctx context.Context) (int64, error) {
+	var count int64
+	query := `SELECT COUNT(DISTINCT owner_chat_id) FROM bots WHERE deleted_at IS NULL`
+	err := r.mysql.db.GetContext(ctx, &count, query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get unique owner count: %w", err)
+	}
+	return count, nil
+}

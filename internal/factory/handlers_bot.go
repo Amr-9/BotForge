@@ -376,13 +376,55 @@ func (f *Factory) handleStatsBtn(c telebot.Context) error {
 		}
 	}
 
+	// Get unique bot owners count
+	ownerCount, _ := f.repo.GetUniqueOwnerCount(ctx)
+
+	// Get user statistics
+	now := time.Now()
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	totalUsers, _ := f.repo.GetGlobalUniqueUserCount(ctx)
+	activeUsers24h, _ := f.repo.GetGlobalActiveUserCount(ctx, now.AddDate(0, 0, -1))
+	activeUsers7d, _ := f.repo.GetGlobalActiveUserCount(ctx, now.AddDate(0, 0, -7))
+	newUsersToday, _ := f.repo.GetGlobalNewUserCount(ctx, todayStart)
+	bannedCount, _ := f.repo.GetGlobalBannedUserCount(ctx)
+
+	// Get message statistics
+	totalMessages, _ := f.repo.GetGlobalTotalMessageCount(ctx)
+	messagesToday, _ := f.repo.GetGlobalMessageCountSince(ctx, todayStart)
+	messagesWeek, _ := f.repo.GetGlobalMessageCountSince(ctx, now.AddDate(0, 0, -7))
+
+	// Get configuration statistics
+	autoReplyCount, _ := f.repo.GetGlobalAutoReplyCount(ctx)
+	forcedChannelCount, _ := f.repo.GetGlobalForcedChannelCount(ctx)
+
 	msg := fmt.Sprintf(`📊 <b>System Statistics</b>
 
-🤖 <b>Total Bots:</b> %d
-🟢 <b>Running:</b> %d
-🔴 <b>Not Running:</b> %d
-🗑 <b>Deleted:</b> %d`,
-		len(bots), runningCount, len(bots)-runningCount, deletedCount)
+<b>🤖 Bots</b>
+├ Total: %d
+├ Running: %d
+├ Stopped: %d
+├ Deleted: %d
+└ Owners: %d
+
+<b>👥 Users</b>
+├ Total: %d
+├ Active (24h): %d
+├ Active (7d): %d
+├ New today: %d
+└ Banned: %d
+
+<b>📨 Messages</b>
+├ Total: %d
+├ Today: %d
+└ This week: %d
+
+<b>⚙️ Configuration</b>
+├ Auto-replies: %d
+└ Forced channels: %d`,
+		len(bots), runningCount, len(bots)-runningCount, deletedCount, ownerCount,
+		totalUsers, activeUsers24h, activeUsers7d, newUsersToday, bannedCount,
+		totalMessages, messagesToday, messagesWeek,
+		autoReplyCount, forcedChannelCount)
 
 	return c.Edit(msg, f.getBackButton(), telebot.ModeHTML)
 }

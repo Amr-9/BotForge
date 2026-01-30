@@ -231,21 +231,21 @@ func (m *Manager) handleChildStats(bot *telebot.Bot, token string, ownerChat *te
 		msg := fmt.Sprintf(`📊 <b>Bot Statistics</b>
 
 <b>👥 Users</b>
-├ Total: <code>%d</code>
-├ Active (24h): <code>%d</code>
-├ Active (7d): <code>%d</code>
-├ New today: <code>%d</code>
-└ Banned: <code>%d</code>
+├ Total: %d
+├ Active (24h): %d
+├ Active (7d): %d
+├ New today: %d
+└ Banned: %d
 
 <b>📨 Messages</b>
-├ Total: <code>%d</code>
-├ Today: <code>%d</code>
-└ This week: <code>%d</code>
+├ Total: %d
+├ Today: %d
+└ This week: %d
 
 <b>⚙️ Configuration</b>
-├ Auto-replies: <code>%d</code>
-├ Commands: <code>%d</code>
-└ Forced channels: <code>%d</code>`,
+├ Auto-replies: %d
+├ Commands: %d
+└ Forced channels: %d`,
 			totalUsers, activeUsers24h, activeUsers7d, newUsersToday, bannedCount,
 			totalMessages, messagesToday, messagesWeek,
 			keywordCount, commandCount, forcedChannelCount)
