@@ -89,10 +89,13 @@ Use "Add Bot" to add your first bot!`
 			status = "🟢"
 		}
 
-		// Show first 10 chars of token
-		shortToken := bot.Token[:10] + "..."
-		btnText := fmt.Sprintf("%s %s", status, shortToken)
+		// Use stored username, fallback to API if empty (for old bots)
+		username := bot.Username
+		if username == "" {
+			username = getBotUsername(bot.Token)
+		}
 
+		btnText := fmt.Sprintf("%s @%s", status, username)
 		btn := menu.Data(btnText, CallbackBotSelect, bot.Token[:20])
 		rows = append(rows, menu.Row(btn))
 	}
@@ -483,7 +486,7 @@ func (f *Factory) processToken(c telebot.Context, token string) error {
 	var botID int64
 	if deletedBot != nil {
 		// Restore the deleted bot
-		if err := f.repo.RestoreBot(ctx, token, senderID); err != nil {
+		if err := f.repo.RestoreBot(ctx, token, botInfo.Username, senderID); err != nil {
 			log.Printf("Failed to restore bot: %v", err)
 			return c.Reply("❌ Failed to restore bot. Please try again.", f.getBackButton())
 		}
@@ -491,7 +494,7 @@ func (f *Factory) processToken(c telebot.Context, token string) error {
 		log.Printf("Bot restored: %s (ID: %d)", botInfo.Username, botID)
 	} else {
 		// Create new bot
-		savedBot, err := f.repo.CreateBot(ctx, token, senderID)
+		savedBot, err := f.repo.CreateBot(ctx, token, botInfo.Username, senderID)
 		if err != nil {
 			log.Printf("Failed to save bot: %v", err)
 			return c.Reply("❌ Failed to save bot. Please try again.", f.getBackButton())

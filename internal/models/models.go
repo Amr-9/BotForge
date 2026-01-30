@@ -6,6 +6,7 @@ import "time"
 type Bot struct {
 	ID                   int64     `db:"id"`
 	Token                string    `db:"token"`
+	Username             string    `db:"username"` // Bot username (without @)
 	OwnerChatID          int64     `db:"owner_chat_id"`
 	IsActive             bool      `db:"is_active"`
 	StartMessage         string    `db:"start_message"`
