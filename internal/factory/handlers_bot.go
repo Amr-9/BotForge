@@ -525,7 +525,7 @@ func (f *Factory) processToken(c telebot.Context, token string) error {
 	}
 
 	// Delete the message containing the token for security
-	if err := c.Delete(); err != nil {
+	if err := c.Bot().Delete(c.Message()); err != nil {
 		log.Printf("Warning: Failed to delete token message: %v", err)
 	}
 
