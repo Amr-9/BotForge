@@ -559,8 +559,8 @@ Users can now message your bot and you'll receive their messages here!`,
 			botInfo.Username, botInfo.FirstName)
 	}
 
-	// Send success message first
-	if err := c.Reply(successMsg, f.getMainMenu(isAdmin), telebot.ModeHTML); err != nil {
+	// Send success message first (as a new message, not a reply)
+	if err := c.Send(successMsg, f.getMainMenu(isAdmin), telebot.ModeHTML); err != nil {
 		return err
 	}
 
