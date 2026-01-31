@@ -524,11 +524,6 @@ func (f *Factory) processToken(c telebot.Context, token string) error {
 		botID = savedBot.ID
 	}
 
-	// Delete the message containing the token for security
-	if err := c.Bot().Delete(c.Message()); err != nil {
-		log.Printf("Warning: Failed to delete token message: %v", err)
-	}
-
 	// Start the bot (Set Webhook)
 	if err := f.manager.StartBot(token, senderID, botID); err != nil {
 		log.Printf("Failed to start bot: %v", err)
@@ -564,5 +559,15 @@ Users can now message your bot and you'll receive their messages here!`,
 			botInfo.Username, botInfo.FirstName)
 	}
 
-	return c.Reply(successMsg, f.getMainMenu(isAdmin), telebot.ModeHTML)
+	// Send success message first
+	if err := c.Reply(successMsg, f.getMainMenu(isAdmin), telebot.ModeHTML); err != nil {
+		return err
+	}
+
+	// Delete the message containing the token for security (after confirming success message was sent)
+	if err := c.Bot().Delete(c.Message()); err != nil {
+		log.Printf("Warning: Failed to delete token message: %v", err)
+	}
+
+	return nil
 }
