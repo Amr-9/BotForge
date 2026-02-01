@@ -20,13 +20,14 @@ import (
 type Manager struct {
 	repo               *database.Repository
 	cache              *cache.Redis
-	bots               map[string]*telebot.Bot // token -> bot instance
-	botIDs             map[string]int64        // token -> bot ID
+	bots               map[string]*telebot.Bot      // token -> bot instance
+	botIDs             map[string]int64             // token -> bot ID
 	webhookURL         string
 	mu                 sync.RWMutex
 	recoveryHandler    recovery.Handler
 	restartPolicies    map[string]*recovery.RestartPolicy     // token -> restart policy
 	restartControllers map[string]*recovery.RestartController // token -> restart controller
+	preloadCancels     map[string]context.CancelFunc          // token -> cancel func for preload goroutine
 }
 
 // NewManager creates a new bot manager with default recovery handler
@@ -45,6 +46,7 @@ func NewManagerWithRecovery(repo *database.Repository, cache *cache.Redis, webho
 		recoveryHandler:    handler,
 		restartPolicies:    make(map[string]*recovery.RestartPolicy),
 		restartControllers: make(map[string]*recovery.RestartController),
+		preloadCancels:     make(map[string]context.CancelFunc),
 	}
 }
 
@@ -178,7 +180,10 @@ func (m *Manager) StartBot(token string, ownerChatID int64, botID int64) error {
 	m.botIDs[token] = botID
 
 	// Preload bot settings into cache (async to not block startup)
-	go m.preloadBotSettings(token, botID)
+	// Use cancellable context to prevent goroutine leak when bot is stopped
+	preloadCtx, preloadCancel := context.WithCancel(context.Background())
+	m.preloadCancels[token] = preloadCancel
+	go m.preloadBotSettings(preloadCtx, token, botID)
 
 	// Create restart policy and controller for child bot
 	policy := recovery.NewRestartPolicy(3, 5*time.Second, 1*time.Minute)
@@ -209,9 +214,16 @@ func (m *Manager) StartBot(token string, ownerChatID int64, botID int64) error {
 }
 
 // preloadBotSettings loads all bot settings into cache on startup
-func (m *Manager) preloadBotSettings(token string, botID int64) {
-	ctx := context.Background()
+func (m *Manager) preloadBotSettings(ctx context.Context, token string, botID int64) {
 	tokenPrefix := token[:10]
+
+	// Check if context is already cancelled
+	select {
+	case <-ctx.Done():
+		log.Printf("Preload cancelled for bot %s... before starting", tokenPrefix)
+		return
+	default:
+	}
 
 	// Fetch bot settings from DB
 	botModel, err := m.repo.GetBotByToken(ctx, token)
@@ -240,6 +252,14 @@ func (m *Manager) preloadBotSettings(token string, botID int64) {
 		log.Printf("Failed to preload settings to cache for bot %s...: %v", tokenPrefix, err)
 	} else {
 		log.Printf("Preloaded settings for bot %s...", tokenPrefix)
+	}
+
+	// Check if context is cancelled before continuing
+	select {
+	case <-ctx.Done():
+		log.Printf("Preload cancelled for bot %s... after settings", tokenPrefix)
+		return
+	default:
 	}
 
 	// Preload auto-replies
@@ -297,6 +317,12 @@ func (m *Manager) StopBot(token string) {
 	if bot, exists := m.bots[token]; exists {
 		tokenPrefix := token[:10]
 
+		// Cancel the preload goroutine if still running
+		if cancel, cancelExists := m.preloadCancels[token]; cancelExists {
+			cancel()
+			delete(m.preloadCancels, token)
+		}
+
 		// Stop the restart controller first to cancel the goroutine
 		if controller, ctrlExists := m.restartControllers[token]; ctrlExists {
 			controller.Stop()
@@ -327,6 +353,12 @@ func (m *Manager) StopAll() {
 
 	for token, bot := range m.bots {
 		tokenPrefix := token[:10]
+
+		// Cancel the preload goroutine if still running
+		if cancel, cancelExists := m.preloadCancels[token]; cancelExists {
+			cancel()
+			delete(m.preloadCancels, token)
+		}
 
 		// Stop the restart controller first
 		if controller, ctrlExists := m.restartControllers[token]; ctrlExists {

@@ -101,7 +101,9 @@ func (m *Manager) handleToggleForwardReplies(bot *telebot.Bot, token string, own
 		}
 
 		// Invalidate cache
-		m.cache.InvalidateForwardAutoReplies(ctx, token)
+		if err := m.cache.InvalidateForwardAutoReplies(ctx, token); err != nil {
+			log.Printf("Failed to invalidate forward auto-replies cache: %v", err)
+		}
 
 		status := "ON ✅"
 		if !newValue {

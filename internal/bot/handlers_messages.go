@@ -126,7 +126,9 @@ func (m *Manager) createMessageHandler(bot *telebot.Bot, token string, ownerChat
 				}
 
 				// Invalidate start message cache
-				m.cache.InvalidateStartMessage(ctx, token)
+				if err := m.cache.InvalidateStartMessage(ctx, token); err != nil {
+					log.Printf("Failed to invalidate start message cache: %v", err)
+				}
 
 				// Clear state
 				m.cache.ClearUserState(ctx, token, sender.ID)
