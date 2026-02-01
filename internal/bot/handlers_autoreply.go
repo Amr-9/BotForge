@@ -100,6 +100,9 @@ func (m *Manager) handleToggleForwardReplies(bot *telebot.Bot, token string, own
 			return c.Respond(&telebot.CallbackResponse{Text: "Error updating setting", ShowAlert: true})
 		}
 
+		// Invalidate cache
+		m.cache.InvalidateForwardAutoReplies(ctx, token)
+
 		status := "ON ✅"
 		if !newValue {
 			status = "OFF ❌"

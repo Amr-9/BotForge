@@ -125,6 +125,9 @@ func (m *Manager) createMessageHandler(bot *telebot.Bot, token string, ownerChat
 					return c.Reply("❌ Failed to update start message.")
 				}
 
+				// Invalidate start message cache
+				m.cache.InvalidateStartMessage(ctx, token)
+
 				// Clear state
 				m.cache.ClearUserState(ctx, token, sender.ID)
 
@@ -207,8 +210,23 @@ func (m *Manager) handleUserMessage(ctx context.Context, c telebot.Context, bot 
 
 	// Check forward setting - if auto-replied and forwarding is disabled, stop here
 	if autoReplied {
-		botModel, _ := m.repo.GetBotByToken(ctx, token)
-		if botModel != nil && !botModel.ForwardAutoReplies {
+		// Use cache-first pattern
+		forwardEnabled, cacheHit, cacheErr := m.cache.GetForwardAutoReplies(ctx, token)
+		if cacheErr != nil {
+			log.Printf("Cache error getting forward_auto_replies: %v", cacheErr)
+		}
+
+		if !cacheHit {
+			// Fallback to DB
+			botModel, _ := m.repo.GetBotByToken(ctx, token)
+			if botModel != nil {
+				forwardEnabled = botModel.ForwardAutoReplies
+				// Cache for next time
+				m.cache.SetForwardAutoReplies(ctx, token, forwardEnabled)
+			}
+		}
+
+		if !forwardEnabled {
 			return nil // Don't forward to admin
 		}
 	}

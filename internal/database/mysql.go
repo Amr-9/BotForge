@@ -46,10 +46,11 @@ func NewMySQL(dsn string) (*MySQL, error) {
 		return nil, fmt.Errorf("failed to connect to MySQL after %d attempts: %w", maxRetries, err)
 	}
 
-	// Configure connection pool
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
+	// Configure connection pool - optimized for high throughput
+	db.SetMaxOpenConns(50)                  // Increased from 25
+	db.SetMaxIdleConns(10)                  // Increased from 5
+	db.SetConnMaxLifetime(10 * time.Minute) // Increased from 5
+	db.SetConnMaxIdleTime(5 * time.Minute)  // New: prevent stale connections
 
 	mysql := &MySQL{db: db}
 
@@ -213,6 +214,20 @@ func (m *MySQL) migrate() error {
 		log.Printf("Warning: %v", err)
 	}
 
+	// Add performance indexes for message_logs
+	// Critical: Used in HasUserInteracted and GetAllUserChatIDs
+	if err := m.addIndexIfNotExists("message_logs", "idx_bot_user", "bot_id, user_chat_id"); err != nil {
+		log.Printf("Warning: %v", err)
+	}
+	// Important: Improves GetMessageCountSince and GetActiveUserCount
+	if err := m.addIndexIfNotExists("message_logs", "idx_bot_created", "bot_id, created_at"); err != nil {
+		log.Printf("Warning: %v", err)
+	}
+	// Helpful: Improves complex queries with all three columns
+	if err := m.addIndexIfNotExists("message_logs", "idx_bot_user_created", "bot_id, user_chat_id, created_at"); err != nil {
+		log.Printf("Warning: %v", err)
+	}
+
 	return nil
 }
 
@@ -235,6 +250,28 @@ func (m *MySQL) addColumnIfNotExists(table, column, definition string) error {
 			return fmt.Errorf("failed to add column %s: %w", column, err)
 		}
 		log.Printf("Added column %s to table %s", column, table)
+	}
+
+	return nil
+}
+
+// addIndexIfNotExists safely adds an index if it doesn't exist
+func (m *MySQL) addIndexIfNotExists(table, indexName, columns string) error {
+	var count int
+	query := `SELECT COUNT(*) FROM information_schema.STATISTICS 
+			  WHERE TABLE_SCHEMA = DATABASE() 
+			  AND TABLE_NAME = ? 
+			  AND INDEX_NAME = ?`
+	if err := m.db.Get(&count, query, table, indexName); err != nil {
+		return fmt.Errorf("failed to check index existence: %w", err)
+	}
+
+	if count == 0 {
+		createQuery := fmt.Sprintf("CREATE INDEX %s ON %s (%s)", indexName, table, columns)
+		if _, err := m.db.Exec(createQuery); err != nil {
+			return fmt.Errorf("failed to create index %s: %w", indexName, err)
+		}
+		log.Printf("Created index %s on table %s", indexName, table)
 	}
 
 	return nil

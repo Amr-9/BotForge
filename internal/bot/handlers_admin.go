@@ -55,20 +55,31 @@ func (m *Manager) handleChildStart(bot *telebot.Bot, token string, ownerChat *te
 			return c.Send(blockedMsg, menu, telebot.ModeHTML)
 		}
 
-		// Retrieve Start Message from DB
-		botModel, err := m.repo.GetBotByToken(ctx, token)
+		// Get start message - cache first
+		var welcomeMsg string
+		cachedMsg, cacheHit, err := m.cache.GetStartMessage(ctx, token)
 		if err != nil {
-			log.Printf("Failed to get bot for start msg: %v", err)
-			return c.Send("👋 Welcome! Please send me your message.")
+			log.Printf("Cache error getting start message: %v", err)
 		}
 
-		welcomeMsg := "👋 Welcome! Please send me your message."
-		if botModel != nil && botModel.StartMessage != "" {
-			welcomeMsg = botModel.StartMessage
+		if cacheHit && cachedMsg != "" {
+			welcomeMsg = cachedMsg
+		} else {
+			// Cache miss - fallback to DB
+			botModel, err := m.repo.GetBotByToken(ctx, token)
+			if err != nil {
+				log.Printf("Failed to get bot for start msg: %v", err)
+				welcomeMsg = "👋 Welcome! Please send me your message."
+			} else if botModel != nil && botModel.StartMessage != "" {
+				welcomeMsg = botModel.StartMessage
+				// Cache for next time
+				m.cache.SetStartMessage(ctx, token, welcomeMsg)
+			} else {
+				welcomeMsg = "👋 Welcome! Please send me your message."
+			}
 		}
 
 		// Send welcome message to user
-		// Use ModeMarkdown to support rich text (Markdown) in start message
 		return c.Send(welcomeMsg, telebot.ModeMarkdown)
 	}
 }

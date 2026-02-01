@@ -28,13 +28,17 @@ type Redis struct {
 // NewRedis creates a new Redis connection
 func NewRedis(addr, password string, db int, ttl time.Duration) (*Redis, error) {
 	client := redis.NewClient(&redis.Options{
-		Addr:         addr,
-		Password:     password,
-		DB:           db,
-		DialTimeout:  5 * time.Second,
-		ReadTimeout:  3 * time.Second,
-		WriteTimeout: 3 * time.Second,
-		PoolSize:     10,
+		Addr:            addr,
+		Password:        password,
+		DB:              db,
+		DialTimeout:     5 * time.Second,
+		ReadTimeout:     3 * time.Second,
+		WriteTimeout:    3 * time.Second,
+		PoolSize:        50,              // Increased from 10
+		MinIdleConns:    10,              // New: keep connections warm
+		PoolTimeout:     4 * time.Second, // New: wait time for connection
+		ConnMaxIdleTime: 5 * time.Minute, // New: close idle connections
+		ConnMaxLifetime: 1 * time.Hour,   // New: max connection age
 	})
 
 	// Test connection
@@ -630,4 +634,96 @@ func (r *Redis) GetShowSentConfirmation(ctx context.Context, botToken string) (b
 func (r *Redis) InvalidateShowSentConfirmation(ctx context.Context, botToken string) error {
 	key := fmt.Sprintf("setting:sent_confirm:%s", botToken)
 	return r.client.Del(ctx, key).Err()
+}
+
+// ==================== Extended Bot Settings Cache ====================
+
+// SetStartMessage caches the bot's start message
+func (r *Redis) SetStartMessage(ctx context.Context, botToken string, message string) error {
+	key := fmt.Sprintf("setting:start_msg:%s", botToken)
+	return r.client.Set(ctx, key, message, 1*time.Hour).Err()
+}
+
+// GetStartMessage retrieves the cached start message
+// Returns: (message, cacheHit, error)
+func (r *Redis) GetStartMessage(ctx context.Context, botToken string) (string, bool, error) {
+	key := fmt.Sprintf("setting:start_msg:%s", botToken)
+	val, err := r.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return val, true, nil
+}
+
+// InvalidateStartMessage clears the cached start message
+func (r *Redis) InvalidateStartMessage(ctx context.Context, botToken string) error {
+	key := fmt.Sprintf("setting:start_msg:%s", botToken)
+	return r.client.Del(ctx, key).Err()
+}
+
+// SetForwardAutoReplies caches the forward auto-replies setting
+func (r *Redis) SetForwardAutoReplies(ctx context.Context, botToken string, enabled bool) error {
+	key := fmt.Sprintf("setting:forward_replies:%s", botToken)
+	val := "0"
+	if enabled {
+		val = "1"
+	}
+	return r.client.Set(ctx, key, val, 1*time.Hour).Err()
+}
+
+// GetForwardAutoReplies retrieves the cached forward auto-replies setting
+// Returns: (enabled, cacheHit, error)
+func (r *Redis) GetForwardAutoReplies(ctx context.Context, botToken string) (bool, bool, error) {
+	key := fmt.Sprintf("setting:forward_replies:%s", botToken)
+	val, err := r.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return true, false, nil // Default to true
+	}
+	if err != nil {
+		return true, false, err
+	}
+	return val == "1", true, nil
+}
+
+// InvalidateForwardAutoReplies clears the cached setting
+func (r *Redis) InvalidateForwardAutoReplies(ctx context.Context, botToken string) error {
+	key := fmt.Sprintf("setting:forward_replies:%s", botToken)
+	return r.client.Del(ctx, key).Err()
+}
+
+// InvalidateAllBotSettings clears all cached settings for a bot
+func (r *Redis) InvalidateAllBotSettings(ctx context.Context, botToken string) error {
+	keys := []string{
+		fmt.Sprintf("setting:start_msg:%s", botToken),
+		fmt.Sprintf("setting:forward_replies:%s", botToken),
+		fmt.Sprintf("setting:sent_confirm:%s", botToken),
+		fmt.Sprintf("forced_sub_enabled:%s", botToken),
+	}
+	return r.client.Del(ctx, keys...).Err()
+}
+
+// PreloadBotSettings loads all bot settings into cache at once
+func (r *Redis) PreloadBotSettings(ctx context.Context, botToken string, startMsg string, forwardReplies, showSentConfirm, forcedSubEnabled bool) error {
+	pipe := r.client.Pipeline()
+
+	if startMsg != "" {
+		pipe.Set(ctx, fmt.Sprintf("setting:start_msg:%s", botToken), startMsg, 1*time.Hour)
+	}
+	pipe.Set(ctx, fmt.Sprintf("setting:forward_replies:%s", botToken), boolToString(forwardReplies), 1*time.Hour)
+	pipe.Set(ctx, fmt.Sprintf("setting:sent_confirm:%s", botToken), boolToString(showSentConfirm), 1*time.Hour)
+	pipe.Set(ctx, fmt.Sprintf("forced_sub_enabled:%s", botToken), boolToString(forcedSubEnabled), 1*time.Hour)
+
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+// boolToString converts bool to "0" or "1"
+func boolToString(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
 }

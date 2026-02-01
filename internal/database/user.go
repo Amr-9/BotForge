@@ -195,16 +195,19 @@ func (r *Repository) GetActiveUserCount(ctx context.Context, botID int64, since 
 }
 
 // GetNewUserCount returns the number of new users (first message) since a given time
+// Uses LEFT JOIN for better performance compared to correlated subquery
 func (r *Repository) GetNewUserCount(ctx context.Context, botID int64, since time.Time) (int64, error) {
 	var count int64
-	query := `SELECT COUNT(DISTINCT user_chat_id) FROM message_logs
-			  WHERE bot_id = ?
-			  AND user_chat_id NOT IN (
-				  SELECT DISTINCT user_chat_id FROM message_logs
-				  WHERE bot_id = ? AND created_at < ?
-			  )
-			  AND created_at >= ?`
-	err := r.mysql.db.GetContext(ctx, &count, query, botID, botID, since, since)
+	query := `SELECT COUNT(DISTINCT ml1.user_chat_id)
+			  FROM message_logs ml1
+			  LEFT JOIN message_logs ml2
+				  ON ml1.bot_id = ml2.bot_id
+				  AND ml1.user_chat_id = ml2.user_chat_id
+				  AND ml2.created_at < ?
+			  WHERE ml1.bot_id = ?
+				  AND ml1.created_at >= ?
+				  AND ml2.id IS NULL`
+	err := r.mysql.db.GetContext(ctx, &count, query, since, botID, since)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get new user count: %w", err)
 	}

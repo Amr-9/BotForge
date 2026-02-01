@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -176,6 +177,9 @@ func (m *Manager) StartBot(token string, ownerChatID int64, botID int64) error {
 	m.bots[token] = bot
 	m.botIDs[token] = botID
 
+	// Preload bot settings into cache (async to not block startup)
+	go m.preloadBotSettings(token, botID)
+
 	// Create restart policy and controller for child bot
 	policy := recovery.NewRestartPolicy(3, 5*time.Second, 1*time.Minute)
 	m.restartPolicies[token] = policy
@@ -202,6 +206,87 @@ func (m *Manager) StartBot(token string, ownerChatID int64, botID int64) error {
 	log.Printf("Started webhook for bot: %s... (ID: %d)", tokenPrefix, botID)
 
 	return nil
+}
+
+// preloadBotSettings loads all bot settings into cache on startup
+func (m *Manager) preloadBotSettings(token string, botID int64) {
+	ctx := context.Background()
+	tokenPrefix := token[:10]
+
+	// Fetch bot settings from DB
+	botModel, err := m.repo.GetBotByToken(ctx, token)
+	if err != nil {
+		log.Printf("Failed to preload settings for bot %s...: %v", tokenPrefix, err)
+		return
+	}
+
+	if botModel == nil {
+		return
+	}
+
+	// Preload all settings into Redis
+	startMsg := ""
+	if botModel.StartMessage != "" {
+		startMsg = botModel.StartMessage
+	}
+
+	err = m.cache.PreloadBotSettings(ctx, token,
+		startMsg,
+		botModel.ForwardAutoReplies,
+		botModel.ShowSentConfirmation,
+		botModel.ForcedSubEnabled,
+	)
+	if err != nil {
+		log.Printf("Failed to preload settings to cache for bot %s...: %v", tokenPrefix, err)
+	} else {
+		log.Printf("Preloaded settings for bot %s...", tokenPrefix)
+	}
+
+	// Preload auto-replies
+	m.preloadAutoReplies(ctx, token, botID)
+}
+
+// preloadAutoReplies loads all auto-replies and commands into cache
+func (m *Manager) preloadAutoReplies(ctx context.Context, token string, botID int64) {
+	tokenPrefix := token[:10]
+
+	// Load keywords
+	keywords, err := m.repo.GetAutoReplies(ctx, botID, "keyword")
+	if err != nil {
+		log.Printf("Failed to preload keywords for bot %s...: %v", tokenPrefix, err)
+	} else {
+		for _, r := range keywords {
+			cacheData := &cache.AutoReplyCache{
+				Response:    r.Response,
+				MessageType: r.MessageType,
+				FileID:      r.FileID,
+				Caption:     r.Caption,
+			}
+			m.cache.SetAutoReplyWithMedia(ctx, token, r.TriggerWord, cacheData, "keyword")
+		}
+		if len(keywords) > 0 {
+			log.Printf("Preloaded %d keywords for bot %s...", len(keywords), tokenPrefix)
+		}
+	}
+
+	// Load commands
+	commands, err := m.repo.GetAutoReplies(ctx, botID, "command")
+	if err != nil {
+		log.Printf("Failed to preload commands for bot %s...: %v", tokenPrefix, err)
+	} else {
+		for _, cmd := range commands {
+			cacheData := &cache.AutoReplyCache{
+				Response:    cmd.Response,
+				MessageType: cmd.MessageType,
+				FileID:      cmd.FileID,
+				Caption:     cmd.Caption,
+			}
+			m.cache.SetAutoReplyWithMedia(ctx, token, cmd.TriggerWord, cacheData, "command")
+		}
+		if len(commands) > 0 {
+			log.Printf("Preloaded %d commands for bot %s...", len(commands), tokenPrefix)
+		}
+	}
 }
 
 // StopBot removes the bot from manager and DELETE webhook
