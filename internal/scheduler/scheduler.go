@@ -252,6 +252,9 @@ func (s *Scheduler) calculateNextRun(msg *models.ScheduledMessage, from time.Tim
 			daysUntil += 7
 		}
 		next = next.AddDate(0, 0, daysUntil)
+
+	default:
+		return nil
 	}
 
 	return &next

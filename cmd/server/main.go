@@ -78,32 +78,11 @@ func main() {
 		log.Fatalf("Failed to set factory webhook: %v", err)
 	}
 
-	// Use existing Factory logic (just attach the bot instance)
-	// We need to slightly adapt NewFactory to accept an existing bot or update it
-	// For now, let's create it and then swap the poller/webhook manually if needed
-	// Actually, better to just modify Factory struct or inject the bot
-	// Let's rely on manager's routing for everyone including factory
-
 	// Create Factory Logic
 	factory, err := factory.NewFactory(factoryBot, repo, manager, cfg.AdminID)
 	if err != nil {
 		log.Fatalf("Failed to create factory logic: %v", err)
 	}
-	// Note: NewFactory internally creates a LongPoller bot.
-	// To fix this without changing Factory signature too much, we will rely on valid architecture.
-	// But `NewFactory` currently creates a NEW bot.
-	// We should update `Internal/bot/factory.go` to accept WebhookURL too or just use the manager's router
-	// For simplicity in this step, I will let NewFactory run, but we must update `factory.go` next.
-	// Because `NewFactory` currently forces LongPoller.
-
-	// Register Factory in Manager so it handles its updates via ServeHTTP
-	// We can manually add it to manager's map if we expose a method, or just use `StartBot` logic adapted.
-	// But Factory has special handlers.
-
-	// Let's Pause here. I need to update Factory.go first to support Webhook or pass the bot in.
-	// I will act proactively and update Factory.go in the next tool call.
-
-	// For Main.go, we setup the HTTP server.
 
 	// Create shared panic recovery handler
 	panicHandler := recovery.DefaultHandler
@@ -151,16 +130,8 @@ func main() {
 		log.Printf("Started %d child bots successfully", manager.GetRunningCount())
 	}
 
-	// Manually register Factory Bot into Manager's map so ServeHTTP finds it
-	// Accessing private map is not allowed. We need a method `RegisterBot` or similar in Manager.
-	// Or simply, we treat Factory as just another bot in the manager but with special handlers attached?
-
-	// Better approach:
-	// 1. Update Factory to use the passed `manager` for Webhook registration?
-	// 2. Or just let Manager handle routing for Factory too.
-
-	// Let's Assume I will add `RegisterExistingBot` to manager.
-	manager.RegisterExistingBot(cfg.FactoryBotToken, factory.GetBot()) // Method to be added
+	// Register Factory Bot into Manager so ServeHTTP routes its webhook updates
+	manager.RegisterExistingBot(cfg.FactoryBotToken, factory.GetBot())
 
 	// Start scheduler service
 	schedulerService.Start()
